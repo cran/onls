@@ -1,3 +1,8 @@
+onls 0.1-1 (07-09-2015)
+
+* improved grammar and style in manual and vignette.
+* transferred .Rmw vignette into 'vignette' folder for auto-generation    
+
 onls 0.1-0 (26-07-2014)
 
-* 
+* first package version

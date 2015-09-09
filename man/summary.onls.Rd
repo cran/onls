@@ -4,7 +4,7 @@
 \title{Summary function for 'onls' objects}
 
 \description{
-Provides a summary for the coefficients of the converged fit including their error estimates, and the standard errors in respect to vertical and orthogonal residuals.
+Provides a summary for the parameters of the converged fit including their error estimates, and the standard errors in respect to vertical and orthogonal residuals.
 }
 
 \usage{

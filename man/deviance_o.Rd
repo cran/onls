@@ -5,7 +5,7 @@
 \title{Deviance of the orthogonal residuals}
 
 \description{
-Returns the deviance \eqn{\sum_{i=1}^N \| D_i \|^2} of the orthogonal residuals  from the fitted \code{\link{onls}} model.
+Returns the deviance \eqn{\sum_{i=1}^N \| D_i \|^2} of the orthogonal residuals from the fitted \code{\link{onls}} model.
 }
 
 \usage{

@@ -17,7 +17,7 @@ Provides a printed summary of the converged fit obtained from \code{\link{onls}}
 }
 
 \value{
-A printed summary containing the formula, data name, converged parameters, vertical residual sum-of-squares \deqn{\sum_{i=1}^{n}(y_i - \hat{y_i})^2}, orthogonal residual sum-of-squares \deqn{\sum_{i=1}^{n}\| D_i \|^2}, number of points with orthogonality as obtained from \code{\link{check_o}}, and number of iterations. 
+A printed summary containing the formula, data name, converged parameters, vertical residual sum-of-squares \deqn{\sum_{i=1}^{n}(y_i - \hat{y_i})^2}, orthogonal residual sum-of-squares \deqn{\sum_{i=1}^{n}\| D_i \|^2}, number of points with orthogonality as obtained from \code{\link{check_o}} and number of iterations to convergence. 
 }
      
 \author{

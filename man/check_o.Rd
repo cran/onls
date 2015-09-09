@@ -5,7 +5,7 @@
 \title{Check the fit for orthogonality of all points}
 
 \description{
-Checks for orthogonality of all points by calculation of the angle between the slope of the tangent at \eqn{(x_{0i}, y_{0i})} and the slope of the Euclidean vector \eqn{\|\vec{D}_i\|} to \eqn{(x_i, y_i)}, which should be \eqn{90^{\circ}}, if the Euclidean distance has been minimized. See 'Details'.
+Checks for orthogonality of all points by calculating the angle between the slope of the tangent at \eqn{(x_{0i}, y_{0i})} and the slope of the Euclidean vector \eqn{\|\vec{D}_i\|} to \eqn{(x_i, y_i)}, which should be \eqn{90^{\circ}} if the Euclidean distance has been minimized. See 'Details'.
 }
 
 \usage{

@@ -3,14 +3,14 @@ Type: Package
 LazyLoad: no
 LazyData: yes
 Title: Orthogonal Nonlinear Least-Squares Regression
-Version: 0.1-0
-Date: 2015-01-17
+Version: 0.1-1
+Date: 2015-08-20
 Author: Andrej-Nikolai Spiess <a.spiess@uke.uni-hamburg.de>        
 Maintainer: Andrej-Nikolai Spiess <a.spiess@uke.uni-hamburg.de>
-Description: Orthogonal Nonlinear Least-Squares Regression using Levenberg-Marquardt minimization.
+Description: Orthogonal Nonlinear Least-Squares Regression using Levenberg-Marquardt Minimization.
 License: GPL (>= 2)
 Depends: R (>= 2.13.0), minpack.lm
 NeedsCompilation: no
-Packaged: 2015-01-17 18:53:48 UTC; aspiess
+Packaged: 2015-09-09 17:39:35 UTC; aspiess
 Repository: CRAN
-Date/Publication: 2015-01-17 21:10:48
+Date/Publication: 2015-09-09 21:19:30

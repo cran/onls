@@ -10,6 +10,13 @@ check_o
 )
 
 importFrom("minpack.lm", nls.lm, nls.lm.control)
+importFrom("graphics", "lines", "par", "plot", "points")
+importFrom("stats", ".checkMFClasses", "approx", "as.formula", "coef",
+             "confint", "deviance", "fitted", "formula", "getInitial",
+             "model.weights", "napredict", "naprint", "numericDeriv",
+             "optimize", "printCoefmat", "profile", "pt", "qf", "qt",
+             "resid", "residuals", "spline", "symnum", "update")
+
 
 ## S3 methods
 S3method(print, onls)

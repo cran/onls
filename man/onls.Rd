@@ -44,7 +44,7 @@ The minimization of the Euclidean distance is conducted by using an inner loop o
 In detail, \code{onls} conducts the following steps:\cr
 1) A normal (non-orthogonal) nonlinear model is fit by \code{\link{nls.lm}} to the data. This approach has been implemented because parameters of the orthogonal model are usually within a small window of the normal model. The obtained parameters are passed to 2).\cr
 2) Outer loop: Levenberg-Marquardt minimization of the orthogonal distance sum-of-squares \eqn{\sum_{i=1}^N \| D_i \|^2} using \code{\link{nls.lm}}, optimization of \eqn{\boldsymbol{\beta}}.\cr
-3) Inner loop: For each \eqn{(x_i, y_i)}, find \eqn{({\color{red}x_{0i}}, f({\color{red}x_{0i}}), \hat{\beta})},  \eqn{x_{0i} \in [a, b]}, that minimizes \eqn{\| D_i \|}, using \code{\link{optimize}}. Return vector of orthogonal distances \eqn{\| \vec{D} \|}.\cr
+3) Inner loop: For each \eqn{(x_i, y_i)}, find \eqn{({\color{red}x_{0i}}, f({\color{red}x_{0i}}, \hat{\beta}))},  \eqn{x_{0i} \in [a, b]}, that minimizes \eqn{\| D_i \|}, using \code{\link{optimize}}. Return vector of orthogonal distances \eqn{\| \vec{D} \|}.\cr
 
 The outer loop (\code{nls.lm}) scales with the number of parameters \eqn{p} in the model, probably with \eqn{\mathcal{O}(p)} for evaluating the 1-dimensional Jacobian and \eqn{\mathcal{O}(p^2)} for the two-dimensional Hessian. The inner loop has \eqn{\mathcal{O}(n)} for finding \eqn{\min \| D_i \|}. Simulations with different number of \eqn{n} showed that the processor times scale linearly.
 

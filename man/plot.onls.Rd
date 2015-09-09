@@ -4,7 +4,7 @@
 \title{Plotting function for 'onls' objects}
 
 \description{
-Plots the orthogonal nonlinear model obtained from \code{\link{onls}}.
+Plots an orthogonal nonlinear model obtained from \code{\link{onls}}.
 }
 
 \usage{
@@ -21,7 +21,7 @@ Plots the orthogonal nonlinear model obtained from \code{\link{onls}}.
 }
 
 \value{
-A plot corresponding to the above mentioned arguments.
+A plot of the \code{\link{onls}} model.
 }
      
 \author{
