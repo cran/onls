@@ -32,18 +32,20 @@ Andrej-Nikolai Spiess
 ## Quadratic model with 10\% added noise.
 ## Omitting the "nls" curve,
 ## display orthogonal segments.
+set.seed(123)
 x <- 1:20
 y <- 10 + 3*x^2
-y <- sapply(y, function(a) rnorm(1, a, 0.1 * a))
+y <- y + rnorm(20, 0, 50)
 DAT <- data.frame(x, y)
-mod <- onls(y ~ a + b * x^2, data = DAT, start = list(a = 1, b = 1))
+mod <- onls(y ~ a + b * x^2, data = DAT, start = list(a = 10, b = 3), extend = c(0.2, 0))
 plot(mod, fitted.nls = FALSE)
 
 ## Due to different scaling, 
 ## orthogonality of fit is not evident.
-## We need to have equal x/y-scaling for that:
-plot(mod, fitted.nls = FALSE, xlim = c(0, 50),
-     ylim = c(0, 50))
+## We need to have equal x/y-scaling for that,
+## using asp = 1!
+plot(mod, fitted.nls = FALSE, xlim = c(0, 10),
+     ylim = c(0, 200), asp = 1)
 }
 
 \keyword{models}

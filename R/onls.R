@@ -4,7 +4,6 @@ onls <- function(formula, data = parent.frame(), start, jac = NULL,
                  window = 12, extend = c(0.2, 0.2), fixed = NULL, 
                  verbose = TRUE, ...) 
 {
-  options(warn = -1)
   formula <- as.formula(formula)
   if (!is.list(data) && !is.environment(data)) 
     stop("'data' must be a list or an environment")
@@ -196,6 +195,10 @@ onls <- function(formula, data = parent.frame(), start, jac = NULL,
   
   ## orthogonal LS function, outer loop => LM,
   ## inner loop => 'optimize' for each x/y pair
+  
+  e1 <- new.env()
+  #assign("X0s", X0s, envir = e1)
+  
   onlsFCT <- function(par, mf) {
     par[SEL] <- START[SEL]    
     mf[m] <- par    
@@ -213,18 +216,22 @@ onls <- function(formula, data = parent.frame(), start, jac = NULL,
       OPT <- optimize(optFCT, interval = INTERVAL, x2 = PRED[i], y2 = RESP[i], mf = mf,
                       tol = .Machine$double.eps^0.5) 
       resid_o[i] <- OPT$objective  
-      X0s[i] <<- OPT$minimum                
+      X0s[i] <- OPT$minimum  
+      assign("X0s", X0s, envir = e1)
     }
       
     res <- .swts * resid_o  
     res
   }
   
+  
   ## do orthogonal fitting with starting parameters from NLS
   if (verbose) cat("Optimizing orthogonal NLS...\n")  
   ONLS <- nls.lm(par = NLS$par, fn = onlsFCT, jac = NULL, control = control, 
                  lower = lower, upper = upper, mf = mf)
-    
+  
+  X0s <- get("X0s", envir = e1)
+  
   if (verbose) {
     if (ONLS$info %in% 1:4) cat("  Passed...", NLS$message, "\n\n")
     else cat("  Failed...", NLS$message, "\n") 

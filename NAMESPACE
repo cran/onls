@@ -6,7 +6,8 @@ y0,
 deviance_o,
 residuals_o,
 logLik_o,
-check_o
+check_o,
+NIST
 )
 
 importFrom("minpack.lm", nls.lm, nls.lm.control)

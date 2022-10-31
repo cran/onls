@@ -103,18 +103,18 @@ Biopharm Drug Disp (1997), \bold{18}: 711-716.
 Orthogonal Distance Regression.\cr
 Boggs PT and Rogers JE.\cr
 NISTIR (1990), \bold{89-4197}: 1-15.\cr
-\url{http://docs.scipy.org/doc/external/odr_ams.pdf}.
+\url{https://docs.scipy.org/doc/external/odr_ams.pdf}.
 
 User's Reference Guide for ODRPACK Version 2.01\cr
 Software for Weighted Orthogonal Distance Regression.\cr
 Boggs PT, Byrd RH, Rogers JE and Schnabel RB.
 NISTIR (1992), \bold{4834}: 1-113.\cr
-\url{http://docs.scipy.org/doc/external/odrpack_guide.pdf}.
+\url{https://docs.scipy.org/doc/external/odrpack_guide.pdf}.
 
 ALGORITHM 676 ODRPACK: Software for Weighted Orthogonal Distance Regression.\cr
 Boggs PT, Donaldson JR, Byrd RH and Schnabel RB.\cr
 ACM Trans Math Soft (1989), \bold{15}, 348-364.\cr
-\url{http://dl.acm.org/citation.cfm?id=76913}.
+\url{https://dl.acm.org/doi/10.1145/76909.76913}.
 }
 
 \examples{
@@ -143,7 +143,7 @@ DNase2$conc <- DNase2$conc * 2
 mod2 <- update(mod1, data = DNase2)
 print(mod2)
 
-\dontrun{
+\donttest{
 ## 1B. Same model as above, but using the restricted
 ## predictor range which results in non-orthogonality
 ## of some points.
@@ -172,7 +172,7 @@ coef(mod4) # 4.4879/7.1882/221.8383 as in page 363
 deviance_o(mod4) # 15.263 as in page 363
 
 ## 4. Example with bounds from simple_example.f90
-## in http://www.netlib.org/toms/869.zip.
+## in https://www.netlib.org/toms/869.zip.
 x <- c(0.982, 1.998, 4.978, 6.01)
 y <- c(2.7, 7.4, 148.0, 403.0)
 DAT <- data.frame(x, y)
@@ -194,8 +194,7 @@ print(mod6)
 ## 6. Example to show that one can even conduct
 ## linear orthogonal regression (Deming regression).
 ## Comparison to XLstat
-## http://www.xlstat.com/de/lern-center/tutorials/
-## method-comparison-with-the-deming-regression-with-xlstat-life.html
+## https://help.xlstat.com/6650-run-deming-regression-compare-methods-excel
 x <- c(9.8, 9.7, 10.7, 10.9, 12.4, 12.5, 12.8, 12.8, 12.9, 13.3, 
        13.4, 13.5, 13.7, 14.9, 15.2, 15.5)
 y <- c(10.1, 11.4, 10.8, 11.3, 11.8, 12.1, 12.3, 13.6, 14.2, 14.4,
@@ -205,11 +204,6 @@ mod7 <- onls(y ~ a + b * x, data = DAT,
             start = list(a = 2, b = 3))
 print(mod7) ## -1.909/1.208 as on webpage
 plot(mod7)
-
-## 7. Use the more complex nonlinear models from
-## the NIST database
-## => http://www.itl.nist.gov/div898/strd/nls/nls_main.shtml.
-onls:::NIST()
 }
 }   
 

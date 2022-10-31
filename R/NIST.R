@@ -1,5 +1,7 @@
-NIST <- function()
+NIST <- function(verbose = FALSE)
 {
+  oldpar <- par(no.readonly = TRUE) 
+  on.exit(par(oldpar))
   par(mfrow = c(2, 2))
   
   ### Chwirut2
@@ -15,8 +17,8 @@ NIST <- function()
        61.3, 17.7, 8.74, 59.2, 16.3, 8.62, 81, 4.87, 14.62, 81.7, 17.17, 
        81.3, 28.9)
   ONLS1 <- onls(y ~ exp(-b1 * x)/(b2 + b3 * x), 
-              start = list(b1 = 0.1, b2 = 0.005, b3 = 0.01))
-  print(ONLS1)
+              start = list(b1 = 0.1, b2 = 0.005, b3 = 0.01), verbose = verbose)
+  if (verbose) print(ONLS1)
   par(mar = c(2, 2, 2, 1))
   plot(ONLS1, main = "Chwirut2")
  
@@ -57,8 +59,8 @@ NIST <- function()
        3.3626, 1.1827, 4.8754)
   ONLS2 <- onls(y ~ b1 * exp(-b2 * x) + b3 * exp(-(x - b4)^2/b5^2) + b6 * 
                 exp(-(x - b7)^2/b8^2), start = list(b1 = 100, b2 = 0.01, 
-                b3 = 100, b4 = 50, b5 = 20, b6 = 70, b7 = 200, b8 = 20))
-  print(ONLS2)
+                b3 = 100, b4 = 50, b5 = 20, b6 = 70, b7 = 200, b8 = 20), verbose = verbose)
+  if (verbose) print(ONLS2)
   par(mar = c(2, 2, 2, 1))
   plot(ONLS2, main = "Gauss1")
   
@@ -82,8 +84,8 @@ NIST <- function()
               + b5 * cos(2 * pi * x/b4) + b6 * sin(2 * pi * x/b4)
               + b8 * cos(2 * pi * x/b7) + b9 * sin(2 * pi * x/b7), 
               start = list(b1 = 10, b2 = 1, b3 = 1, b4 = 10, b5 = 0,
-                           b6 = 1, b7 = 10, b8 = 1, b9 = 1))
-  print(ONLS3)
+                           b6 = 1, b7 = 10, b8 = 1, b9 = 1), verbose = verbose)
+  if (verbose) print(ONLS3)
   par(mar = c(2, 2, 2, 1))
   plot(ONLS3, main = "ENSO")
     
@@ -92,9 +94,9 @@ NIST <- function()
   y <- c(16.08, 33.83, 65.80, 97.20, 191.55, 326.20, 386.87, 520.53, 
          590.03, 651.92, 724.93, 699.56, 689.96, 637.56, 717.41)
   ONLS4 <- onls(y ~ b1/(1 + exp(b2 - b3 * x))^(1/b4),   
-                start = list(b1 = 1000, b2 = 1, b3 = 0.1, b4 = 1),
-                extend = c(1, 1))
-  print(ONLS4)
+                start = list(b1 = 1000, b2 = -1, b3 = 0.1, b4 = 0.1),
+                extend = c(1, 1), verbose = verbose)
+  if (verbose) print(ONLS4)
   plot(ONLS4, main = "Rat43") 
 }
 

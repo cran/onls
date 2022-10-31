@@ -1,3 +1,12 @@
+onls 0.1-2 (31-10-2022)
+
+* changed some URLs
+* changed package maintainer
+* improved grammar and style in manual and vignette
+* removed <<- from onls.R
+* changed NIST.R as to not print to console
+* made the package more CRAN complient
+
 onls 0.1-1 (07-09-2015)
 
 * improved grammar and style in manual and vignette.

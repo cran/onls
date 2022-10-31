@@ -37,7 +37,7 @@ Andrej-Nikolai Spiess, taken and modified from the \code{\link{nls}} functions.
 }
         
 \examples{
-\dontrun{
+\donttest{
 DNase1 <- subset(DNase, Run == 1)
 DNase1$density <- sapply(DNase1$density, function(x) rnorm(1, x, 0.1 * x))
 mod1 <- onls(density ~ Asym/(1 + exp((xmid - log(conc))/scal)), 

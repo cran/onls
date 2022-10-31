@@ -9,9 +9,8 @@
 
 \title{{\color{blue}Orthogonal Nonlinear Least-Squares Regression in R}}
 \author{Andrej-Nikolai Spiess\\
-Department of Andrology\\
-University Hospital Hamburg-Eppendorf \\
-\texttt{a.spiess@uke.de}
+Soilytix GmbH, Hamburg, Germany\\
+\texttt{draspiess@gmail.com}
 }
 \date{\today}
 
@@ -131,7 +130,7 @@ plot(mod1)
 @
 Due to different scaling of $x$- and $y$-axes, orthogonality is often not evident (Figure 1). Scaling both axes equally resolves this issue (Figure 2):
 <<echo=true>>=
-plot(mod1, xlim = c(0, 1), ylim = c(0, 1))
+plot(mod1, xlim = c(0, 1), ylim = c(0, 1), asp = 1)
 @
 \textbf{Fit features and summaries.}\\
 The usual \textbf{summary} as in \texttt{summary.nls} but with information for \textit{vertical} and \textit{orthogonal} residual standard errors:
@@ -211,7 +210,7 @@ plot(mod1)
 \newpage
 \begin{figure}
 <<fig=true, width=4.5, height=5, results=hide, echo=false>>=
-plot(mod1, xlim = c(0, 0.25), ylim = c(0, 0.25))
+plot(mod1, xlim = c(0, 0.25), ylim = c(0, 0.25), asp = 1)
 @
 \caption{Plot of \texttt{mod1} as in Figure 1 with equal scaling for better visualization of orthogonality.} 
 \end{figure}
