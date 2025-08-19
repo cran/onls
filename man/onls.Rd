@@ -20,7 +20,7 @@ onls(formula, data = parent.frame(), start, jac = NULL,
 \item{data}{an optional data frame in which to evaluate the variables in \code{formula} and \code{weights}. Can also be a list or an environment, but not a matrix.}
 \item{start}{a named list or named numeric vector of starting estimates.}
 \item{jac}{A function to return the Jacobian.}
-\item{control}{an optional list of control settings. See \code{\link{nls.lm.control}} for the names of the settable control values and their effect.}
+\item{control}{an optional list of control settings. See \code{\link[minpack.lm]{nls.lm.control}} for the names of the settable control values and their effect.}
 \item{lower}{A numeric vector of lower bounds on each parameter. If not given, the default lower bound for each parameter is set to \code{-Inf}.}
 \item{upper}{A numeric vector of upper bounds on each parameter. If not given, the default lower bound for each parameter is set to \code{Inf}.}
 \item{trace}{logical value indicating if a trace of the iteration progress should be printed. Default is \code{FALSE}. If \code{TRUE}, the orthogonal residual (weighted) sum-of-squares and the parameter values are printed at the conclusion of each iteration.}
@@ -42,11 +42,11 @@ The minimization of the Euclidean distance is conducted by using an inner loop o
 \deqn{\mathop{\rm argmin}\limits_{x_{0i} \in [a, b]} \sqrt{(x_i - {\color{red}x_{0i}})^2 + (y_i - {f({\color{red}x_{0i}}, \hat{\beta}))^2}}}
 
 In detail, \code{onls} conducts the following steps:\cr
-1) A normal (non-orthogonal) nonlinear model is fit by \code{\link{nls.lm}} to the data. This approach has been implemented because parameters of the orthogonal model are usually within a small window of the normal model. The obtained parameters are passed to 2).\cr
-2) Outer loop: Levenberg-Marquardt minimization of the orthogonal distance sum-of-squares \eqn{\sum_{i=1}^N \| D_i \|^2} using \code{\link{nls.lm}}, optimization of \eqn{\boldsymbol{\beta}}.\cr
+1) A normal (non-orthogonal) nonlinear model is fit by \code{\link[minpack.lm]{nls.lm}} to the data. This approach has been implemented because parameters of the orthogonal model are usually within a small window of the normal model. The obtained parameters are passed to 2).\cr
+2) Outer loop: LM-minimization of the orthogonal distance sum-of-squares \eqn{\sum_{i=1}^N \| D_i \|^2} using \code{\link[minpack.lm]{nls.lm}}, optimization of \eqn{\boldsymbol{\beta}}.\cr
 3) Inner loop: For each \eqn{(x_i, y_i)}, find \eqn{({\color{red}x_{0i}}, f({\color{red}x_{0i}}, \hat{\beta}))},  \eqn{x_{0i} \in [a, b]}, that minimizes \eqn{\| D_i \|}, using \code{\link{optimize}}. Return vector of orthogonal distances \eqn{\| \vec{D} \|}.\cr
 
-The outer loop (\code{nls.lm}) scales with the number of parameters \eqn{p} in the model, probably with \eqn{\mathcal{O}(p)} for evaluating the 1-dimensional Jacobian and \eqn{\mathcal{O}(p^2)} for the two-dimensional Hessian. The inner loop has \eqn{\mathcal{O}(n)} for finding \eqn{\min \| D_i \|}. Simulations with different number of \eqn{n} showed that the processor times scale linearly.
+The outer loop (\code{[minpack.lm]{nls.lm}}) scales with the number of parameters \eqn{p} in the model, probably with \eqn{\mathcal{O}(p)} for evaluating the 1-dimensional Jacobian and \eqn{\mathcal{O}(p^2)} for the two-dimensional Hessian. The inner loop has \eqn{\mathcal{O}(n)} for finding \eqn{\min \| D_i \|}. Simulations with different number of \eqn{n} showed that the processor times scale linearly.
 
 Two arguments of this function are VERY important.\cr
 1) \code{extend}: By default, it is set to \code{c(0.2, 0.2)}, which means that \eqn{(x_{0i}, y_{0i})} in the inner loop are also optimized in an extended predictor value \eqn{x} range of \eqn{[\min(x) - 0.2 \cdot \mathrm{range}(x), \max(x) + 0.2 \cdot \mathrm{range}(x)]}. This is important for the values at the beginning and end of the data, because the resulting model can display significantly different curvature if \eqn{(x_{0i}, y_{0i})} are forced to be within the predictor range, often resulting in a loss of orthogonality at the end points. See \code{\link{check_o}} for an example. If the model should be forced to be within the given predictor range, supply \code{extend = c(0, 0)}.\cr
@@ -114,7 +114,7 @@ NISTIR (1992), \bold{4834}: 1-113.\cr
 ALGORITHM 676 ODRPACK: Software for Weighted Orthogonal Distance Regression.\cr
 Boggs PT, Donaldson JR, Byrd RH and Schnabel RB.\cr
 ACM Trans Math Soft (1989), \bold{15}, 348-364.\cr
-\url{https://dl.acm.org/doi/10.1145/76909.76913}.
+\doi{10.1145/76909.76913}.
 }
 
 \examples{
