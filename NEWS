@@ -1,4 +1,8 @@
-onls 0.1-2 (18-08-2025)
+onls 0.1-4 (01-09-2025)
+
+* fixed a URL error to retain CRAN compatibility
+
+onls 0.1-3 (18-08-2025)
 
 * fixed some small bugs to retain CRAN compatibility
 

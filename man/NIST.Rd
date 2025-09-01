@@ -5,7 +5,7 @@
 \title{Complicated nonlinear models from the NIST database}
 
 \description{
-Fits, by \code{\link{onls}}, a few complicated nonlinear models from the NIST database (\url{https:/www.itl.nist.gov/div898/strd/nls/nls_main.shtml}), \emph{i.e.} 'Chwirut2', 'Gauss1', 'ENSO' and 'Rat43'.
+Fits, by \code{\link{onls}}, a few complicated nonlinear models from the NIST database (\url{https://www.itl.nist.gov/div898/strd/nls/nls_main.shtml}), \emph{i.e.} 'Chwirut2', 'Gauss1', 'ENSO' and 'Rat43'.
 }
 
 \usage{
