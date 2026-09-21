@@ -1,4 +1,4 @@
-\name{x0}
+\name{x0, y0}
 \alias{x0}
 \alias{y0}
 \encoding{latin1}
@@ -6,7 +6,7 @@
 \title{x0/y0-values from orthogonal nonlinear least squares regression}
 
 \description{
-Returns the \eqn{{\color{red} x_{0i}/y_{0i}}} values as obtained from minimizing the Euclidean distance \deqn{\min\| D_i \| \equiv \min\sqrt{(x_i - {\color{red}x_{0i}})^2 + (y_i - {\color{red}y_{0i}})^2}} 
+Returns the fitted foot points \eqn{\hat\xi_i} (\code{x0}) and the corresponding fitted response \eqn{f(\hat\xi_i, \hat\theta)} (\code{y0}) obtained by \code{\link{onls}} -- the points on the fitted curve/surface that the orthogonal-distance criterion projects each observation onto. See 'Details' for the criterion actually minimized, which reduces to plain Euclidean distance only in the simplest (single-predictor, unweighted) case; for multivariate and/or weighted fits, a precision-weighted quadratic form is minimized instead.
 }
 
 \usage{
@@ -18,8 +18,20 @@ y0(object)
 \item{object}{an object returned from \code{\link{onls}}.}
 }
 
+\details{
+For a single-predictor (\eqn{p=1}), unweighted \code{\link{onls}} fit, the foot point \eqn{\hat\xi_i} (returned by \code{x0}) is obtained by minimizing the plain Euclidean distance between the observation \eqn{(x_i, y_i)} and a point \eqn{(\xi_i, f(\xi_i,\hat\theta))} on the fitted curve,
+\deqn{\min_{\xi_i} \sqrt{(x_i-\xi_i)^2 + \left[y_i-f(\xi_i,\hat\theta)\right]^2}.}
+More generally -- for multivariate models (\eqn{p>1}) and/or fits using \code{weights}, \code{sigma_x}, or \code{sigma_y} -- \code{\link{onls}} instead minimizes a precision-weighted quadratic form (see 'Details' in \code{\link{onls}} for the full construction),
+\deqn{\min_{\xi_i} \; Qyy_i \left[y_i - f(\xi_i,\hat\theta)\right]^2 + (\xi_i-x_i)^T Qx_i (\xi_i-x_i),}
+which reduces to the plain Euclidean distance above only when \eqn{p=1} and \eqn{Qyy_i = Qx_i = 1} (the default, unweighted case) -- Euclidean distance is therefore a special case of the criterion minimized, not the general rule.
+
+\code{x0} returns \eqn{\hat\xi_i}: a length-\eqn{n} vector for single-predictor models, or an \eqn{n \times p} matrix (one column per predictor, in the order given by \code{object$pred_names}) for multivariate models. \code{y0} returns \eqn{f(\hat\xi_i,\hat\theta)}, always a length-\eqn{n} vector, since the response is univariate regardless of \eqn{p}.
+
+For single-predictor models, values are returned in the internally-used sorted-predictor order (matching \code{object$pred}/\code{object$resp}), not necessarily the original row order of the input data; for multivariate models, sorting is a no-op and the original observation order is used.
+}
+
 \value{
-A vector of \eqn{\color{red}x_{0i}} or \eqn{\color{red}y_{0i}} values.
+For single-predictor models, a length-\eqn{n} vector of \eqn{\hat\xi_i} (\code{x0}) or \eqn{f(\hat\xi_i,\hat\theta)} (\code{y0}) values. For multivariate models, \code{x0} returns an \eqn{n \times p} matrix (one column per predictor); \code{y0} still returns a length-\eqn{n} vector, since the response remains univariate.
 }
 
 \author{

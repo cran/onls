@@ -1,0 +1,779 @@
+---
+title: "Orthogonal Nonlinear Least-Squares Regression with onls"
+author: "Andrej-Nikolai Spiess"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Orthogonal Nonlinear Least-Squares Regression with onls}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.align = "center",
+  fig.width = 6,
+  fig.height = 5.5
+)
+```
+
+```{r setup}
+library(onls)
+```
+
+## 1. Why orthogonal regression?
+
+Ordinary nonlinear least squares (`nls()`) assumes that the predictor $x$ is known exactly and
+all the "noise" lives in the response $y$: it fits $y = f(x, \theta) + \varepsilon$ by minimizing
+the *vertical* distance between each point and the curve,
+
+$$\min_{\theta} \sum_{i=1}^n \left[y_i - f(x_i, \theta)\right]^2.$$
+
+In many real measurement situations -- calibration curves, instrument comparisons, physical or
+chemical assays -- **both** $x$ and $y$ carry measurement error. Orthogonal distance regression
+(ODR), also called *errors-in-variables* regression, accounts for this by allowing the model to
+also adjust the predictor: for each observation $i$, a *foot point* $\xi_i$ is found on the fitted
+curve/surface, and the model is fit by minimizing the distance from $(x_i, y_i)$ to
+$(\xi_i, f(\xi_i, \theta))$ instead of the purely vertical distance to $(x_i, f(x_i, \theta))$.
+
+For a single, unweighted predictor this is literally the **shortest (perpendicular) distance** from
+each point to the curve -- hence "orthogonal" regression. `onls()` generalizes this to multiple
+predictors and to heteroscedastic/weighted measurement error in both $x$ and $y$, and it does so
+in the manner of ODRPACK (Boggs, Byrd, Rogers & Schnabel): same objective, same weights, same
+covariance estimate.
+
+Deming regression (linear, known ratio of $x$/$y$ variances) and Total Least Squares (linear,
+unweighted, multivariate) are both special cases of what `onls()` fits; we'll see both later.
+
+### 1.1 When is it worth it?
+
+Classical least squares is *biased* when the predictors are measured with error. The coefficients
+of noisy predictors are attenuated towards zero; with correlated predictors the bias spills over
+to the other coefficients (even to those of nearly error-free predictors); and a nonlinear term
+such as $x_4^2$ is hit harder, because the error enters through the nonlinearity. Orthogonal
+regression puts the error where it belongs -- on the *measured* predictor -- and propagates it
+through the model function, which removes most of this bias. Two caveats matter in practice:
+
+* the error standard deviations have to be **supplied** (`sigma_x`, `sigma_y`); they cannot be
+  estimated from the data alone, and the result depends on them;
+* the estimates have a larger variance than their least-squares counterparts, and they describe
+  the relationship between the *true* quantities -- if the goal is merely to predict $y$ from
+  future *noisy* $x$, ordinary least squares is the better predictor.
+
+A sensible workflow is therefore to fit both and compare: if the estimates hardly differ,
+measurement error does not matter for your problem.
+
+## 2. The mathematics
+
+### 2.1 The joint criterion
+
+For a nonlinear model $y = f(x, \theta)$ with predictor vector $x \in \mathbb{R}^p$ and parameter
+vector $\theta$, let $Qyy_i$ be the response *precision* (inverse variance) for observation $i$,
+and $Qx_i$ its $p \times p$ predictor precision matrix. `onls()` uses the formulation of ODRPACK's
+explicit ODR problem: the parameters and one correction $\delta_i = \xi_i - x_i$ per observation
+(so that $\xi_i = x_i + \delta_i$ is the foot point on the model surface) are estimated
+**simultaneously** by minimizing
+
+$$S(\theta, \delta_1, \dots, \delta_n) = \sum_{i=1}^{n}\left[Qyy_i\,\big(y_i - f(x_i + \delta_i, \theta)\big)^2 + \delta_i^T Qx_i\,\delta_i\right].$$
+
+For fixed $\theta$, minimizing $S$ over $\delta_i$ alone gives the weighted squared orthogonal
+distance of observation $i$ to the model surface,
+
+$$d_i^2 = Qyy_i\left[y_i - f(\hat\xi_i, \theta)\right]^2 + (\hat\xi_i - x_i)^T Qx_i (\hat\xi_i - x_i),$$
+
+so the estimate $\hat\theta$ is the minimizer of $\sum_i d_i^2$. The important point is that
+`onls()` does **not** solve a separate foot-point problem for every trial value of $\theta$: all
+$q + np$ unknowns ($q$ free parameters plus $n$ corrections of length $p$) are optimized at once.
+This is the "combined" approach of ODRPACK.
+
+### 2.2 Where the precisions come from
+
+$Qyy_i$ and $Qx_i$ are built from the `sigma_y`, `sigma_x`, and `weights` arguments to `onls()`:
+
+* `sigma_y` (a standard deviation, not a variance): either one value shared by all observations,
+  or a length-$n$ vector of observation-specific response error.
+* `weights`: optional non-negative weights, combined multiplicatively,
+  $Qyy_i = w_i / \sigma_{y,i}^2$. They act on the response side only.
+* `sigma_x`: predictor measurement error, accepted as `NULL` (unit variance), a scalar (isotropic),
+  a length-$p$ vector (diagonal, predictor-specific), a full $p \times p$ covariance matrix
+  (allowing *correlated* predictor errors, $Qx = \Sigma_x^{-1}$), or an $n \times p$ matrix of
+  observation-specific standard deviations.
+
+When neither `sigma_x`, `sigma_y`, nor `weights` is supplied, $Qyy_i = 1$ and $Qx_i = I_p$ for
+every observation, and $d_i$ reduces to the plain Euclidean distance from $(x_i, y_i)$ to the curve
+-- the classical, unweighted orthogonal-regression case.
+
+ODRPACK's own weights `WE` (response) and `WD` (predictor) are precisions, so they correspond to
+$Qyy_i = WE_i$ and $Qx_i = WD_i$; Section 3.4 shows how to pass them to `onls()`.
+
+### 2.3 The algorithm, briefly
+
+1. An ordinary (vertical) nonlinear fit via Levenberg-Marquardt (`minpack.lm::nlsLM()`) gives
+   warm-start parameter values.
+2. The joint problem is written as a nonlinear least-squares problem in the unknowns
+   $(\theta, \delta)$ with the residual vector of length $n + np$
+
+   $$r(\theta, \delta) = \Big(\big\{Qyy_i^{1/2}\,[y_i - f(x_i + \delta_i, \theta)]\big\}_{i=1}^{n},\;
+   \big\{L_i\,\delta_i\big\}_{i=1}^{n}\Big), \qquad L_i^T L_i = Qx_i,$$
+
+   so that $S = r^T r$, and is solved by a single Levenberg-Marquardt run (`minpack.lm::nls.lm()`),
+   starting at the warm-start values with all $\delta_i = 0$. The Jacobian of $r$ has the sparse
+   "arrow" structure of ODRPACK, because each $\delta_i$ only affects observation $i$:
+
+   $$J = \begin{pmatrix} -W_y^{1/2} F_\theta & -W_y^{1/2} G \\ 0 & L_x \end{pmatrix},$$
+
+   with $F_\theta$ the derivatives of $f$ with respect to the parameters and $G$ the (block
+   diagonal) derivatives with respect to the predictors, both at the current foot points. `onls()`
+   supplies them exactly, by symbolic differentiation of the model formula and, if the formula
+   cannot be differentiated (for example because it calls a user-defined function), by central
+   finite differences.
+3. `nls.lm()` stops after 1024 iterations per call, so `onls()` restarts it from its last iterate
+   until it converges, a restart brings no further improvement, or the total budget
+   `control$outer_max` (default 5000 iterations) is used up. The convergence tolerances `ftol`
+   and `ptol` are settable through `control` (default `1e-10`).
+4. The parameter covariance is the ODRPACK (Gauss-Newton) covariance, i.e. the parameter block of
+   $(J^T J)^{-1}$, which can be written with effective-variance weights as
+
+   $$\widehat{\mathrm{Var}}(\hat\theta) = \hat\sigma^2\left(F_\theta^T W F_\theta\right)^{-1},\quad
+   w_i = \left(Qyy_i^{-1} + g_i^T Qx_i^{-1} g_i\right)^{-1},\quad g_i = \nabla_x f(\hat\xi_i, \hat\theta).$$
+
+   Here $\hat\sigma^2$ is the reduced chi-square when `known_sigma = FALSE`, and $1$ when the
+   supplied precisions are taken as known (`known_sigma = TRUE`, the default as soon as `sigma_x`
+   or `sigma_y` is given).
+5. If some free parameters have no measurable influence on the fitted model (for example because a
+   sigmoid has collapsed to a constant), `onls()` issues a warning -- see Section 8.3.
+
+### 2.4 Checking orthogonality
+
+At the solution, $\partial S / \partial \delta_i = 0$ gives the stationarity (KKT) condition
+
+$$Qx_i\,(\hat\xi_i - x_i) = Qyy_i\,\big(y_i - f(\hat\xi_i, \hat\theta)\big)\,\nabla_x f(\hat\xi_i, \hat\theta).$$
+
+For unit precisions this says that the vector from the foot point to the observation is
+orthogonal to the model surface. `check_o()` verifies it after fitting -- either via the classical
+tangent-angle criterion (unweighted case, where a right angle is literally expected; the angle is
+computed with `atan2()` so that points whose foot point coincides with the observation are handled
+correctly) or via the relative residual of the stationarity condition (weighted case, where a plain
+right angle is no longer the correct geometric picture). The tolerances are `tol_deg` (default
+$0.05^\circ$) and `tol_kkt` (default $0.001$). We'll use it throughout.
+
+## 3. A univariate example
+
+We start with the classic `DNase` enzyme-linked immunosorbent assay data (from base R's `nls`
+documentation) and a 3-parameter logistic model -- a single predictor, no weighting, the simplest
+case where $d_i$ is literally the Euclidean distance to the curve.
+
+```{r univariate-fit}
+DNase1 <- subset(DNase, Run == 1)
+set.seed(1)
+DNase1$density <- sapply(DNase1$density, function(x) rnorm(1, x, 0.1 * x))
+
+mod_uni <- onls(density ~ Asym / (1 + exp((xmid - log(conc)) / scal)),
+                data = DNase1, start = list(Asym = 3, xmid = 0, scal = 1))
+print(mod_uni)
+```
+
+```{r univariate-summary}
+summary(mod_uni)
+```
+
+The plot below shows the fitted orthogonal curve (red) alongside the ordinary vertical-least-squares
+warm-start curve (blue), with segments connecting each observation to its foot point. Because this
+fit is unweighted, `plot.onls()` uses a literal 1:1 axis aspect ratio by default -- the segments
+should genuinely look perpendicular to the red curve.
+
+```{r univariate-plot, fig.alt = "Orthogonal vs vertical fit with foot-point segments"}
+plot(mod_uni)
+```
+
+`check_o()` confirms this numerically: for every observation, the angle between the tangent to the
+curve and the line to the observation should be within $0.05^\circ$ of a right angle.
+
+```{r univariate-check}
+check_o(mod_uni, plot = FALSE)
+```
+
+### 3.1 Foot points and orthogonal residuals
+
+The foot points $(\hat\xi_i, f(\hat\xi_i, \hat\theta))$ are available through `x0()` and `y0()`
+(for single-predictor models in the sorted predictor order that `check_o()` uses as well).
+Together with the observations they give the orthogonal distances by hand:
+
+```{r foot-points}
+FP <- data.frame(x = mod_uni$pred, x0 = x0(mod_uni), y = mod_uni$resp, y0 = y0(mod_uni))
+FP$dist <- sqrt((FP$x - FP$x0)^2 + (FP$y - FP$y0)^2)
+head(FP)
+
+## for unit precisions, the sum of squared distances is the minimized objective
+all.equal(sum(FP$dist^2), deviance_o(mod_uni))
+```
+
+`residuals_o()` returns the fitted, precision-weighted orthogonal distances $\hat d_i$ -- the
+per-observation quantities that `deviance_o()` squares and sums -- directly, and in the
+**original observation order** (whereas `x0()`/`y0()` follow the sorted predictor order for a
+single predictor). For an unweighted single-predictor fit such as this one they are plain Euclidean
+distances, i.e. the `dist` column above in a different order:
+
+```{r orthogonal-residuals}
+d_o <- residuals_o(mod_uni)
+all.equal(sort(d_o), sort(FP$dist), check.attributes = FALSE)
+all.equal(sum(d_o^2), deviance_o(mod_uni))
+
+## side by side with the vertical residuals of the same fit
+head(data.frame(vertical = residuals(mod_uni), orthogonal = d_o))
+```
+
+If observations were dropped through `na.action = na.exclude`, `residuals_o()` re-inserts them as
+`NA` at their original positions, so that the result always lines up with the rows of the data:
+
+```{r orthogonal-residuals-na}
+DNase1_na <- DNase1
+DNase1_na$density[c(3, 10)] <- NA
+mod_na <- onls(density ~ Asym / (1 + exp((xmid - log(conc)) / scal)),
+               data = DNase1_na, start = list(Asym = 3, xmid = 0, scal = 1),
+               na.action = na.exclude)
+residuals_o(mod_na)
+```
+
+### 3.2 Plot options
+
+`plot.onls()` draws the observations, the orthogonal fit (red), the ordinary vertical-least-squares
+warm-start fit (blue) and the segments to the foot points. Each of these can be switched off
+(`fitted.onls`, `fitted.nls`, `segments`), and `npoints` sets the resolution of the drawn curves.
+The orthogonality is easiest to judge for a steep curve. Here is a noisy quadratic:
+
+```{r plot-quadratic, fig.alt = "Noisy quadratic with orthogonal and vertical fit and foot-point segments"}
+set.seed(123)
+x <- 1:20
+y <- 10 + 3 * x^2 + rnorm(20, 0, 50)
+DAT_quad <- data.frame(x, y)
+mod_quad <- onls(y ~ a + b * x^2, data = DAT_quad, start = list(a = 10, b = 3))
+plot(mod_quad)
+```
+
+To zoom into a region, supplying `xlim` alone is enough: a matching `ylim` is chosen automatically.
+A strict 1:1 axis ratio is generally not possible for a zoomed region, so it has to be switched off
+with `asp = FALSE`:
+
+```{r plot-zoom, fig.alt = "Zoom into the left half of the quadratic fit, without the NLS curve"}
+plot(mod_quad, fitted.nls = FALSE, xlim = c(0, 10), asp = FALSE)
+```
+
+### 3.3 Adding measurement error: weighted regression
+
+If the predictor and/or response measurement error is actually *known* (e.g. from instrument
+specifications or replicate measurements), supplying `sigma_x`/`sigma_y` gives a proper weighted
+orthogonal fit rather than treating all points as equally uncertain. A classic illustration is
+Pearson's (1901) data with York's (1966) weights -- ten points with wildly different, known
+per-point standard deviations in both $x$ and $y$:
+
+```{r weighted-fit}
+x <- c(0.0, 0.9, 1.8, 2.6, 3.3, 4.4, 5.2, 6.1, 6.5, 7.4)
+y <- c(5.9, 5.4, 4.4, 4.6, 3.5, 3.7, 2.8, 2.8, 2.4, 1.5)
+sd_x <- 1 / sqrt(c(1000, 1000, 500, 800, 200, 80, 60, 20, 1.8, 1.0))
+sd_y <- 1 / sqrt(c(1.0, 1.8, 4.0, 8.0, 20, 20, 70, 70, 100, 500))
+DAT_py <- data.frame(x = x, y = y)
+
+mod_w <- onls(y ~ b0 + b1 * x, data = DAT_py, start = list(b0 = 5, b1 = -0.5),
+              sigma_x = sd_x, sigma_y = sd_y)
+summary(mod_w)   # intercept 5.480 (0.295), slope -0.481 (0.058), matching York's published values
+```
+
+Since this fit is weighted, `check_o()` automatically switches from the tangent-angle criterion to
+the underlying KKT-residual criterion (a plain right angle is no longer the geometrically correct
+picture once the axes are rescaled by unequal precisions):
+
+```{r weighted-check}
+check_o(mod_w, plot = FALSE)
+```
+
+### 3.4 ODRPACK's weights `WE` and `WD`
+
+ODRPACK takes a response weight `WE` and a predictor weight `WD` for every observation, both as
+precisions (inverse variances). In `onls()`, `WE` is passed as `weights` (with the default
+`sigma_y = 1`, or equivalently as `sigma_y = 1/sqrt(WE)`), and `WD` through
+`sigma_x = 1/sqrt(WD)` (for $p > 1$ an $n \times p$ matrix of $1/\sqrt{WD_{ij}}$).
+`known_sigma = FALSE` gives ODRPACK's scaling of the standard errors by the residual variance.
+
+```{r we-wd}
+set.seed(7)
+n <- 30
+xt <- seq(0.5, 10, length.out = n)
+WD <- runif(n, 0.5, 4)   # predictor weights
+WE <- runif(n, 0.5, 4)   # response weights
+x <- xt + rnorm(n, 0, 0.3 / sqrt(WD))
+y <- 2 * exp(-0.3 * xt) + 0.5 + rnorm(n, 0, 0.03 / sqrt(WE))
+DAT_we <- data.frame(x, y)
+
+mod_we <- onls(y ~ a * exp(-b * x) + c, data = DAT_we,
+               start = list(a = 1.5, b = 0.2, c = 0.3),
+               weights = WE, sigma_x = 1 / sqrt(WD), known_sigma = FALSE)
+summary(mod_we)   # 1.98131 (0.03347) / 0.28984 (0.01468) / 0.48480 (0.02986), as scipy.odr with we = WE, wd = WD
+```
+
+The minimized objective is exactly the ODRPACK objective $\sum WE\,\varepsilon^2 + WD\,\delta^2$:
+
+```{r we-wd-objective}
+f <- function(x, b) b[1] * exp(-b[2] * x) + b[3]
+xi <- mod_we$xi[, 1]
+all.equal(sum(WE * (y - f(xi, coef(mod_we)))^2 + WD * (xi - x)^2), mod_we$objective)
+```
+
+## 4. Reference problems from the literature
+
+`onls()` reproduces the published results of the standard ODRPACK test problems.
+
+### 4.1 ODRPACK guide, example 2.C.i
+
+```{r odrpack-guide}
+x <- c(0, 0, 5, 7, 7.5, 10, 16, 26, 30, 34, 34.5, 100)
+y <- c(1265, 1263.6, 1258, 1254, 1253, 1249.8, 1237, 1218, 1220.6, 1213.8, 1215.5, 1212)
+DAT_guide <- data.frame(x, y)
+
+mod_guide <- onls(y ~ b1 + b2 * (exp(b3 * x) - 1)^2, data = DAT_guide,
+                  start = list(b1 = 1500, b2 = -50, b3 = -0.1))
+deviance_o(mod_guide)   # 21.445, as on page 47 of the guide
+summary(mod_guide)      # 1264.65481 (1.03492) / -54.01838 (1.583992) / -0.08785 (6.33222E-3), as on page 48
+```
+
+This example is also a good test for `check_o()`. The model has slope zero at $x = 0$ (the first
+two observations), and its last point lies far out on an almost flat part of the curve. For the
+two observations at $x = 0$ the foot point coincides with the observation, so the residual is
+purely vertical and the tangent-angle criterion has to be evaluated without dividing by
+$x_i - \xi_i = 0$:
+
+```{r odrpack-guide-check}
+check_o(mod_guide, plot = FALSE)
+```
+
+### 4.2 Algorithm 676 (ODRPACK), pages 355-356
+
+```{r algorithm-676}
+x <- c(0, 10, 20, 30, 40, 50, 60, 70, 80, 85, 90, 95, 100, 105)
+y <- c(4.14, 8.52, 16.31, 32.18, 64.62, 98.76, 151.13, 224.74, 341.35,
+       423.36, 522.78, 674.32, 782.04, 920.01)
+DAT_676 <- data.frame(x, y)
+
+mod_676 <- onls(y ~ b1 * 10^(b2 * x / (b3 + x)), data = DAT_676,
+                start = list(b1 = 1, b2 = 5, b3 = 100))
+deviance_o(mod_676)   # 15.263, as on page 363
+summary(mod_676)      # 4.4879 (0.56876) / 7.1882 (0.69504) / 221.8383 (37.2313), as on page 363
+```
+
+### 4.3 Daeron & Vermeesch (2024), Table 3
+
+A four-point toy example with unit measurement errors in both variables:
+
+```{r daeron}
+DAT_dv <- data.frame(x = c(9, 19, 31, 41), y = c(21, 31, 39, 49))
+mod_dv <- onls(y ~ a + b * x, data = DAT_dv, start = list(a = 10, b = 1),
+               sigma_x = 1, sigma_y = 1)
+summary(mod_dv)   # 13.71 / 0.8516 (the exact TLS slope); Table 3 of the paper lists 13.71 / 0.851
+```
+
+## 5. A bivariate example, in 3D
+
+With two predictors, the foot point $\xi_i$ is a point in a genuine 3D surface, not a 2D curve,
+and the orthogonal distance is the literal shortest distance from each observation to that surface.
+We fit a hyperboloid of one sheet,
+
+$$z = c\sqrt{1 + (x_1/a)^2 + (x_2/b)^2},$$
+
+with measurement error in both predictors. This surface is always real-valued (the argument under
+the square root is never less than 1), so it's a numerically well-behaved choice for a 3D example.
+
+```{r bivariate-fit}
+set.seed(2024)
+n  <- 60
+x1 <- runif(n, -5, 5)
+x2 <- runif(n, -5, 5)
+
+a_true <- 3; b_true <- 2; c_true <- 4
+z <- c_true * sqrt(1 + (x1 / a_true)^2 + (x2 / b_true)^2) + rnorm(n, 0, 0.3)
+
+x1 <- x1 + rnorm(n, 0, 0.2)
+x2 <- x2 + rnorm(n, 0, 0.15)
+DAT_hyp <- data.frame(x1 = x1, x2 = x2, z = z)
+
+mod_hyp <- onls(z ~ c * sqrt(1 + (x1 / a)^2 + (x2 / b)^2), data = DAT_hyp,
+                start = list(a = 2, b = 2, c = 3),
+                sigma_x = c(0.2, 0.15), sigma_y = 0.3)
+summary(mod_hyp)   # expect a, b, c close to 3, 2, 4
+```
+
+```{r bivariate-check}
+check_o(mod_hyp, plot = FALSE)
+```
+
+For exactly two predictors, `plot.onls()` produces an `rgl`-based 3D plot: the fitted surface (with
+`nmesh` x `nmesh` mesh divisions), the observations, and segments connecting each observation to its
+foot point on the surface. Its advantage is that it can be rotated and zoomed, which is the best
+way to inspect the orthogonality of the points by eye. This isn't run when this vignette is built (it
+opens an interactive graphics device), but works from an interactive R session:
+
+```{r bivariate-plot, eval = FALSE}
+plot(mod_hyp)
+```
+
+### 5.1 A half-dome with a parameter bound
+
+Some models can only be evaluated on part of the parameter space. A half-dome of radius $r$,
+
+$$z = \sqrt{r^2 - x_1^2 - x_2^2},$$
+
+is only defined where $x_1^2 + x_2^2 \le r^2$, so $r$ must exceed the largest radius of any
+observation. A lower bound on the parameter guarantees this:
+
+```{r half-dome}
+set.seed(123)
+n <- 60
+r_true <- 6
+ang <- runif(n, 0, 2 * pi)
+rad <- sqrt(runif(n, 0, 0.55)) * r_true
+x1  <- rad * cos(ang)
+x2  <- rad * sin(ang)
+z <- sqrt(r_true^2 - x1^2 - x2^2) + rnorm(n, 0, 0.15)
+x1 <- x1 + rnorm(n, 0, 0.1)
+x2 <- x2 + rnorm(n, 0, 0.1)
+DAT_dome <- data.frame(x1 = x1, x2 = x2, z = z)
+maxrad <- max(sqrt(x1^2 + x2^2))
+
+mod_dome <- onls(z ~ sqrt(r^2 - x1^2 - x2^2), data = DAT_dome,
+                 start = list(r = r_true),
+                 sigma_x = c(0.1, 0.1), sigma_y = 0.15,
+                 lower = maxrad * 1.05, upper = 100)
+summary(mod_dome)   # r close to 6
+check_o(mod_dome, plot = FALSE)   # all orthogonal to the dome surface
+```
+
+```{r half-dome-plot, eval = FALSE}
+plot(mod_dome)   # renders as a visibly round dome
+```
+
+## 6. A multivariate example -- and translating from `lm()`-style notation
+
+`onls()` supports any number of predictors, but its formula must be written in fully **explicit
+classical notation**, with a distinct parameter symbol multiplying each term -- not the implicit
+`lm()`-style shorthand you may be used to. This matters because `onls()` has to identify each
+parameter by name (to differentiate with respect to it, to allow it to be `fixed`, bounded, etc.),
+which R's usual formula shorthand doesn't expose directly.
+
+Suppose you wanted to relate a response $z$ to four predictors, each entering through a different
+functional form. In `lm()`, you might reach for something like:
+
+```{r classical-lm-style, eval = FALSE}
+## This is NOT valid onls() syntax -- shown only for comparison.
+lm(z ~ x1 + I(x2^2) + sqrt(x3) + log(x4 + 1))
+```
+
+`onls()` needs the same relationship written out with an explicit coefficient on every term:
+
+$$z = \beta_0 + \beta_1 x_1 + \beta_2 x_2^2 + \beta_3 \sqrt{x_3} + \beta_4 \log(x_4 + 1),$$
+
+which translates directly into:
+
+```{r classical-onls-style, eval = FALSE}
+z ~ b0 + b1 * x1 + b2 * x2^2 + b3 * sqrt(x3) + b4 * log(x4 + 1)
+```
+
+Note that a transformed predictor such as $x_2^2$ is **not** a separate variable with its own error:
+the measurement error sits on $x_2$ and is propagated through the square by the model function,
+which is exactly what the foot-point formulation does.
+
+Let's fit exactly that model, with measurement error on all four predictors (a diagonal `sigma_x`,
+i.e. no cross-predictor correlation -- see Section 6.1 for the fully correlated, matrix case):
+
+```{r multivariate-fit}
+set.seed(99)
+n  <- 60
+x1 <- runif(n, 0, 10)
+x2 <- runif(n, 0, 5)
+x3 <- runif(n, 2, 10)   # kept away from 0: sqrt() needs non-negative arguments
+x4 <- runif(n, 2, 10)   # kept away from -1: log(x4 + 1) needs x4 + 1 > 0
+
+b0 <- 2; b1 <- 0.8; b2 <- 0.5; b3 <- 2; b4 <- 3
+z <- b0 + b1 * x1 + b2 * x2^2 + b3 * sqrt(x3) + b4 * log(x4 + 1) + rnorm(n, 0, 0.5)
+
+sd_x <- c(0.3, 0.2, 0.3, 0.3)
+x1 <- x1 + rnorm(n, 0, sd_x[1])
+x2 <- x2 + rnorm(n, 0, sd_x[2])
+x3 <- x3 + rnorm(n, 0, sd_x[3])
+x4 <- x4 + rnorm(n, 0, sd_x[4])
+DAT_mv <- data.frame(x1 = x1, x2 = x2, x3 = x3, x4 = x4, z = z)
+
+mod_mv <- onls(z ~ b0 + b1 * x1 + b2 * x2^2 + b3 * sqrt(x3) + b4 * log(x4 + 1),
+               data = DAT_mv,
+               start = list(b0 = 1, b1 = 1, b2 = 1, b3 = 1, b4 = 1),
+               sigma_x = sd_x, sigma_y = 0.5)
+summary(mod_mv)   # expect b0..b4 close to 2, 0.8, 0.5, 2, 3
+```
+
+```{r multivariate-check}
+check_o(mod_mv, plot = FALSE)
+```
+
+With more than two predictors, `plot.onls()` draws a grid of partial-dependence panels by default
+-- one per predictor, with the others held at their mean foot-point value. These small panels are
+not a literally faithful orthogonality check: the drawn curve fixes the *other* predictors at a
+shared mean value, whereas each point's own segment ends at its own foot point in every dimension,
+so the segments should not be expected to look exactly perpendicular even for an unweighted fit.
+Use `check_o()` for a reliable per-observation, per-axis check:
+
+```{r multivariate-grid, fig.width = 7, fig.height = 7, fig.alt = "Grid of four partial-dependence panels"}
+plot(mod_mv)
+```
+
+Passing `panel` renders a single predictor as one full-size plot instead, with the same 1:1 aspect
+treatment as the univariate case -- by position or by name:
+
+```{r multivariate-panel, fig.alt = "Single full-size panel for one predictor"}
+plot(mod_mv, panel = "x2")
+```
+
+### 6.1 Correlated predictor errors: a full covariance matrix
+
+If the predictor errors are correlated, `sigma_x` can be a full $p \times p$ covariance matrix
+$\Sigma_x$. For a *linear* model this problem has a closed-form solution, the generalized Total
+Least Squares (TLS) estimate: whitening the predictors with the Cholesky factor $L$ of the
+precision matrix ($L^T L = \Sigma_x^{-1}$) and scaling $y$ by $1/\sigma_y$ turns it into plain TLS,
+which is solved by a singular value decomposition. This gives an exact reference for `onls()`:
+
+```{r full-covariance}
+set.seed(2026)
+n <- 40
+Sigma <- matrix(c(0.25, 0.15, 0.15, 0.16), 2)     # correlation of predictor errors = 0.75
+sigma_y <- 0.3
+xt <- cbind(runif(n, 0, 10), runif(n, 0, 10))
+E <- matrix(rnorm(2 * n), n) %*% chol(Sigma)
+DAT_cov <- data.frame(x1 = xt[, 1] + E[, 1], x2 = xt[, 2] + E[, 2],
+                      y = 3 + 1.5 * xt[, 1] - 0.8 * xt[, 2] + rnorm(n, 0, sigma_y))
+
+mod_cov <- onls(y ~ b0 + b1 * x1 + b2 * x2, data = DAT_cov,
+                start = list(b0 = 1, b1 = 1, b2 = 1), sigma_x = Sigma, sigma_y = sigma_y,
+                control = list(ftol = 1e-13, ptol = 1e-13))
+
+## closed-form generalized TLS
+L <- chol(solve(Sigma))
+U <- as.matrix(DAT_cov[, c("x1", "x2")]) %*% t(L)      # whitened predictors
+v <- DAT_cov$y / sigma_y
+Z <- cbind(scale(U, scale = FALSE), v - mean(v))
+V <- svd(Z)$v[, 3]
+w <- -V[1:2] / V[3]
+gTLS <- c(sigma_y * (mean(v) - sum(w * colMeans(U))), sigma_y * drop(t(L) %*% w))
+print(data.frame(gen_TLS = gTLS, onls = coef(mod_cov),
+                 abs_diff = abs(gTLS - coef(mod_cov))))   # all equal
+```
+
+Ignoring the correlation (a diagonal `sigma_x` only) gives visibly different estimates:
+
+```{r full-covariance-diag}
+mod_cov_d <- onls(y ~ b0 + b1 * x1 + b2 * x2, data = DAT_cov,
+                  start = list(b0 = 1, b1 = 1, b2 = 1), sigma_x = sqrt(diag(Sigma)),
+                  sigma_y = sigma_y)
+coef(mod_cov_d)
+```
+
+## 7. Special cases
+
+Two well-known linear methods are recovered exactly as special cases of `onls()`.
+
+### 7.1 Deming regression
+
+Deming regression -- a linear model with known (or assumed) ratio of the predictor/response error
+variances -- is just `onls()` with a linear formula and appropriate `sigma_x`/`sigma_y`, as in the
+Pearson-York example above. With the default equal error variances it is orthogonal regression;
+the example below reproduces the XLSTAT Deming regression demonstration
+(<https://help.xlstat.com/6650-run-deming-regression-compare-methods-excel>):
+
+```{r deming}
+x <- c(9.8, 9.7, 10.7, 10.9, 12.4, 12.5, 12.8, 12.8, 12.9, 13.3,
+       13.4, 13.5, 13.7, 14.9, 15.2, 15.5)
+y <- c(10.1, 11.4, 10.8, 11.3, 11.8, 12.1, 12.3, 13.6, 14.2, 14.4,
+       14.6, 15.3, 15.5, 15.8, 16.2, 16.5)
+DAT_dem <- data.frame(x, y)
+
+mod_dem <- onls(y ~ a + b * x, data = DAT_dem, start = list(a = 2, b = 3))
+print(mod_dem)   # -1.909 / 1.208 as on the webpage
+```
+
+### 7.2 Total Least Squares
+
+Total Least Squares (unweighted, multivariate, linear) is recovered by an unweighted linear
+`onls()` fit. Here we compare it against the closed-form SVD solution of Golub & Van Loan (1980):
+
+```{r tls}
+tls_fit <- function(X, y) {
+  X <- as.matrix(X)
+  p <- ncol(X)
+  Xc <- scale(X, center = TRUE, scale = FALSE)
+  yc <- y - mean(y)
+  xbar <- colMeans(X); ybar <- mean(y)
+  SVD <- svd(cbind(Xc, yc))
+  v <- SVD$v[, p + 1L]
+  slope <- -v[1:p] / v[p + 1L]
+  list(intercept = ybar - sum(slope * xbar), slope = setNames(slope, colnames(X)))
+}
+
+set.seed(11)
+n <- 40
+x1_true <- runif(n, 0, 10)
+x2_true <- runif(n, 0, 10)
+y_true  <- 3 + 1.5 * x1_true - 0.8 * x2_true
+DAT_tls <- data.frame(x1 = x1_true + rnorm(n, 0, 0.5),
+                      x2 = x2_true + rnorm(n, 0, 0.5),
+                      y  = y_true  + rnorm(n, 0, 0.5))
+
+TLS <- tls_fit(DAT_tls[, c("x1", "x2")], DAT_tls$y)
+mod_tls <- onls(y ~ b0 + b1 * x1 + b2 * x2, data = DAT_tls,
+                start = list(b0 = 1, b1 = 1, b2 = 1))
+TLS_vec  <- c(b0 = TLS$intercept, b1 = TLS$slope[["x1"]], b2 = TLS$slope[["x2"]])
+ONLS_vec <- coef(mod_tls)[c("b0", "b1", "b2")]
+print(data.frame(TLS_closed_form = TLS_vec, onls = ONLS_vec,
+                 abs_diff = abs(TLS_vec - ONLS_vec)))   # equal to solver tolerance
+```
+
+## 8. Bounds, fixed parameters and control settings
+
+### 8.1 Parameter bounds
+
+`lower` and `upper` bound the model parameters (one value per parameter, in the order of `start`).
+This example with bounds comes from the `simple_example.f90` of TOMS 869
+(<https://www.netlib.org/toms/869.zip>); Section 5.1 shows a bound that keeps a model inside its
+domain:
+
+```{r bounds}
+DAT_bnd <- data.frame(x = c(0.982, 1.998, 4.978, 6.01),
+                      y = c(2.7, 7.4, 148.0, 403.0))
+mod_bnd <- onls(y ~ b1 * exp(b2 * x), data = DAT_bnd,
+                start = list(b1 = 2, b2 = 0.5),
+                lower = c(0, 0), upper = c(10, 0.9))
+coef(mod_bnd)          # 1.4376 / 0.9, different to the reference 1.6334 / 0.9
+deviance_o(mod_bnd)    # 0.1919, lower than the 0.2674 of the original ODRPACK
+```
+
+### 8.2 Fixed parameters
+
+Parameters flagged in `fixed` are held at their starting values throughout. They are automatically
+excluded from the degrees of freedom, standard errors and correlation matrices (their standard
+error is reported as zero). Here the asymptote of the DNase model is fixed to 3:
+
+```{r fixed}
+mod_fix <- onls(density ~ Asym / (1 + exp((xmid - log(conc)) / scal)),
+                data = DNase1, start = list(Asym = 3, xmid = 0, scal = 1),
+                fixed = c(TRUE, FALSE, FALSE))
+print(mod_fix)
+```
+
+### 8.3 Control settings, starting values and degenerate solutions
+
+Convergence is governed by `control`: the tolerances `ftol`/`ptol` (default `1e-10`) and the total
+iteration budget `outer_max` (default 5000). The convergence details of a fit are stored in
+`convInfo`. Tighter tolerances sharpen the orthogonality angles reported by `check_o()`, which
+matters mostly for observations with very small residuals:
+
+```{r control}
+mod_ctrl <- onls(y ~ b1 + b2 * (exp(b3 * x) - 1)^2, data = DAT_guide,
+                 start = list(b1 = 1500, b2 = -50, b3 = -0.1),
+                 control = list(ftol = 1e-12, ptol = 1e-12, outer_max = 2000))
+coef(mod_ctrl)
+mod_ctrl$convInfo$isConv
+mod_ctrl$convInfo$finIter   # total Levenberg-Marquardt iterations
+```
+
+Like all nonlinear fits, the result depends on the **starting values**, and an orthogonal fit can
+have several local minima. The worst case is a start at which the model is insensitive to some of
+its parameters. Consider the Richards-type growth curve
+$y = b_1 / (1 + \exp(b_2 - b_3 x))^{1/b_4}$: with the start $b_3 = 7$, $\exp(b_2 - b_3 x)$ is
+practically zero for every $x \ge 1$, the model is a constant, and the solver "converges" to that
+constant. `onls()` detects this and warns:
+
+```{r degenerate}
+x <- 1:15
+y <- c(16.08, 33.83, 65.80, 97.20, 191.55, 326.20, 386.87, 520.53,
+       590.03, 651.92, 724.93, 699.56, 689.96, 637.56, 717.41)
+DAT_rich <- data.frame(x, y)
+
+mod_flat <- withCallingHandlers(
+  onls(y ~ b1 / (1 + exp(b2 - b3 * x))^(1 / b4), data = DAT_rich,
+       start = list(b1 = 10, b2 = -1, b3 = 7, b4 = 9)),
+  warning = function(w) {
+    message("Warning: ", conditionMessage(w))
+    invokeRestart("muffleWarning")
+  })
+```
+
+Even with a sensible start (here read off the data: plateau near 750, inflection around $x = 7$)
+this data set has a peculiarity: its orthogonal optimum lies in the limit $b_4 \to 0$, where the
+Richards curve turns into the Gompertz curve $b_1 \exp(-\exp(c - b_3 x))$ with
+$c = b_2 - \log b_4$. Only this combination of $b_2$ and $b_4$ is identified, so the Richards fit
+slides along a flat valley and does not converge cleanly. Fitting the Gompertz form directly
+avoids the problem:
+
+```{r gompertz}
+mod_gomp <- onls(y ~ b1 * exp(-exp(c - b3 * x)), data = DAT_rich,
+                 start = list(b1 = 750, c = 2, b3 = 0.5))
+summary(mod_gomp)
+check_o(mod_gomp, plot = FALSE)
+```
+
+## 9. Diagnostics and further functions
+
+Beyond `check_o()`, several functions distinguish between the classical *vertical* residuals
+(what an ordinary `nls()` fit would report) and the *orthogonal* residuals that `onls()` itself
+minimizes:
+
+| uses vertical residuals | uses orthogonal residuals |
+|---|---|
+| `deviance()`, `fitted()`, `residuals()`, `logLik()` | `deviance_o()`, `residuals_o()`, `logLik_o()` |
+
+`residuals_o()` is demonstrated in Section 3.1.
+
+A low *orthogonal* residual sum of squares is not by itself evidence of a good fit: with unit
+precisions and a steep model, an orthogonal fit can lower its objective by shifting observations
+horizontally. It is therefore worth comparing the vertical residuals (`residuals()`) with those of
+the ordinary least-squares fit that `onls()` starts from, and choosing `sigma_x`/`sigma_y` to
+reflect the actual measurement errors -- in particular a small `sigma_x` for a predictor that is
+essentially error-free, such as a time index.
+
+`logLik_o()` includes a precision-based normalizing correction, so `AIC()`/`BIC()` built from it
+are valid for comparing fits that used *different* weighting schemes -- as long as they were fit to
+the *same* data (the same response and number of observations). Here we fit the DNase model a
+second time, now with `sigma_x`/`sigma_y` supplied, and compare it against the original unweighted
+fit from Section 3:
+
+```{r loglik-compare}
+mod_uni_w <- onls(density ~ Asym / (1 + exp((xmid - log(conc)) / scal)),
+                  data = DNase1, start = list(Asym = 3, xmid = 0, scal = 1),
+                  sigma_x = 0.05, sigma_y = 0.1)
+AIC(logLik_o(mod_uni))
+AIC(logLik_o(mod_uni_w))
+```
+
+### 9.1 Confidence intervals: `confint()`
+
+`confint()` computes **bootstrap** confidence intervals for all parameters. Unlike `confint.nls()`,
+which uses profile likelihoods, it refits the orthogonal model to nonparametric case resamples of
+the data, and it is therefore fully consistent with the criterion that `onls()` minimizes. In each
+replicate the rows of the data are resampled with replacement and the model is refitted with
+`onls()`; fits that fail to converge or violate the internal orthogonality checks are discarded, as
+are pathological solutions that deviate from the original estimate by more than twenty standard
+errors. After `k` successful fits, the limits are the empirical quantiles of the bootstrap
+distribution (`level`, default $0.95$). Further arguments are passed to `update.onls()`.
+
+Because `k` refits are needed, this takes a while. We use `k = 100` here to keep the build time
+short -- in practice, take `k >= 200`:
+
+```{r confint}
+set.seed(123)
+confint(mod_uni, k = 100)
+```
+
+### Further reading
+
+See `?onls` for the full mathematical details (construction of $Qyy_i$/$Qx_i$, the joint
+Levenberg-Marquardt algorithm, `fixed` parameters and bounds, and the approximate parameter
+covariance), `?check_o` for the two orthogonality criteria in detail, and the reference list in
+`?onls` for the underlying literature (Boggs, Byrd, Rogers & Schnabel's ODRPACK, York's weighted
+linear regression, and Daeron & Vermeesch's generalized least squares framing).

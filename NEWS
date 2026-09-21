@@ -1,3 +1,43 @@
+onls 0.2 (21-09-2026)
+
+MAJOR UPDATE: one-pass (ODRPACK-style) algorithm and multivariateness:
+
+* replaced the nested two-step algorithm (inner foot-point optimization for every observation, outer optimization of the parameters, using L-BFGS-B for foot points when p > 1) by a one-pass algorithm in the manner of ODRPACK: the parameters and all foot-point corrections delta_i are estimated simultaneously by a single Levenberg-Marquardt run (minpack.lm::nls.lm) on the joint problem, minimizing the same objective as ODRPACK, sum[ Qyy_i * (y_i - f(x_i + delta_i, theta))^2 + delta_i' * Qx_i * delta_i ], with Qyy and Qx corresponding to ODRPACK's WE and WD
+* the same code path now handles any number of predictors (single predictor, multivariate, correlated predictor errors); the foot points are no longer found by a separate inner optimizer, and orthogonality of the foot points is now the stationarity condition of the joint problem
+* the Jacobian of the joint problem is now supplied to the solver exactly, using symbolic derivatives of the model formula (deriv()) and falling back to central finite differences if the formula cannot be differentiated (e.g. calls to user-defined functions). MINPACK's internal forward-difference Jacobian is unsuitable here, because its step is proportional to the size of each unknown and vanishes for small foot-point corrections, which stalled foot points at their observations (non-orthogonal points, e.g. for the last point of the odrpack guide example 2.C.i)
+* control$outer_max is now the total budget of Levenberg-Marquardt iterations (default 5000). As minpack.lm silently caps a single nls.lm call at 1024 iterations, the solver is restarted from its last iterate until it converges, a restart brings no further improvement, or the budget is used up
+* new control elements `ftol` and `ptol` (convergence tolerances, default 1e-10 instead of sqrt(.Machine$double.eps), which left points with very small residuals slightly non-orthogonal), `diag` (optional parameter scaling, MINPACK's adaptive scaling is now the default) and `lower`/`upper` as alternatives to the arguments of the same name
+* `extend` and `window` now default to NULL, i.e. foot points are unbounded as in ODRPACK. They remain available as optional foot-point bounds for single-predictor models (`window` only together with `extend`)
+* the covariance matrix of the parameters is now the ODRPACK (Gauss-Newton) covariance, i.e. the parameter block of the inverse of J'J of the joint problem, evaluated with effective-variance weights w_i = 1/(1/Qyy_i + g_i' * Qx_i^-1 * g_i) with g_i = df/dx at the foot point. This is valid for any number of predictors (the previous multivariate version ignored the predictor error in the standard errors)
+* the NLS warm start now substitutes fixed parameters into the model formula instead of fitting them freely and resetting them afterwards, and no longer fails silently when `weights` are supplied (the weights were not found by nlsLM, so the raw starting values were used instead)
+* onls() now warns if some free parameters have no measurable influence on the fitted model (e.g. a sigmoid that has collapsed to a constant because its exponent underflows), a degenerate stationary point at which the solver may report convergence
+* the model formula is now evaluated in its own environment, so that user-defined functions and constants used in the model are found; the model is evaluated once at the starting values and errors are reported instead of being swallowed
+* extended the core algorithm from single-predictor to n-dimensional (multivariate) models
+* added support for weighted/heteroscedastic orthogonal regression via new `sigma_x`, `sigma_y` and `known_sigma` arguments (scalar, per-predictor vector, full p x p covariance matrix, or observation-specific standard deviations)
+* check_o() now automatically switches from the tangent-angle criterion to a KKT-residual criterion for weighted fits, and checks multivariate models one predictor axis at a time
+* check_o() no longer returns NaN if a foot point coincides with its observation (dx = 0, e.g. where the model slope is zero): the angle is now computed as atan2(|m*dx - dy|, |dx + m*dy|), which is algebraically identical to the old formula but avoids the division by dx. Observations lying on the fitted curve are reported with alpha = NA and Ortho = TRUE
+* check_o() gained the arguments `tol_deg` (default 0.05 degrees) and `tol_kkt` (default 0.001) for the orthogonality tolerances, and now computes its slopes itself (central differences, evaluated in the environment of the model formula) instead of relying on internal helper functions
+* plot.onls() gained an interactive 3D rgl-based plot for two-predictor models and a grid of partial-dependence panels (selectable via new `panel` argument) for more than two predictors
+* plot.onls() gained an `asp` argument to toggle the 1:1 axis-ratio enforcement used to visually verify orthogonality, and now auto-derives a matching range when only xlim or ylim is supplied
+* logLik_o() now includes a Jacobian/normalizing-constant correction for response/predictor precisions, so AIC()/BIC() from it are valid across onls() fits with different weighting schemes
+* confint.onls() now explicitly conducts bootstrap confidence interval estimation on the orthogonal residuals. 
+* fixed a diagonal p x p `sigma_x` matrix giving wrong (partly zero) predictor precisions
+* fixed `weights`, `sigma_x` and `sigma_y` given as vectors not following `subset` and `na.action` (only a `sigma_x` matrix did)
+* fixed residuals_o() returning values in sorted-predictor order instead of original observation order, which also misaligned NA reinsertion via na.action
+* fixed summary.onls() reporting Std. Error/t value/Pr(>|t|) as 0/Inf/a wrong p-value for fixed parameters instead of NA, and computing cov.unscaled from the vertical- instead of the orthogonal-residual variance
+* fixed check_o() using the wrong sign in its KKT-residual computation for multivariate weighted models, and now correctly realigns precisions to sorted-predictor order for single-predictor models
+* fixed vcov.onls() rescaling the covariance matrix by the vertical- instead of the orthogonal-residual variance
+* fixed logLik.onls() scaling the weight-correction term by n/2 instead of 0.5, affecting AIC()/BIC() for any fit with non-constant weights
+* fixed predict.onls() erroring on se.fit/prediction intervals for models with fixed parameters
+* fixed profile.onls() silently treating originally-fixed parameters as free while profiling other parameters
+* deviance_o(), residuals_o() and print.onls() now report general precision-weighted orthogonal distances rather than assuming plain Euclidean distance
+* removed the `...`, `jac` and `verbose` arguments from onls() (`trace` already covered progress reporting; the Jacobian is now always supplied internally)
+* `data` is no longer optional in onls() (previously defaulted to parent.frame())
+* onls() now stops with an informative error if the response is not a plain variable name, if all parameters are fixed, or if `lower`/`upper` do not have one value per parameter
+* clarified that multivariate formulas must use explicit classical notation (y ~ b0 + b1*x1 + b2*x2) rather than R shorthand (y ~ x1 + x2)
+* rewrote onls.Rd to describe the one-pass algorithm with its mathematics (objective, joint residual vector and Jacobian structure, stationarity conditions, covariance), updated check_o.Rd, and corrected the value of the bounded fit in example 6 (1.4376 / 0.9)
+* added new reference-check examples to onls() (Total Least Squares closed-form comparison, Pearson/York weighted regression, Daeron & Vermeesch 2024, control settings) and new 3D/multivariate examples to plot.onls()
+
 onls 0.1-4 (01-09-2025)
 
 * fixed a URL error to retain CRAN compatibility

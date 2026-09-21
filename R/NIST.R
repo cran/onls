@@ -16,12 +16,13 @@ NIST <- function(verbose = FALSE)
        59.5, 21.67, 8.55, 62, 20.2, 7.76, 3.75, 11.81, 54.7, 23.7, 11.55, 
        61.3, 17.7, 8.74, 59.2, 16.3, 8.62, 81, 4.87, 14.62, 81.7, 17.17, 
        81.3, 28.9)
-  ONLS1 <- onls(y ~ exp(-b1 * x)/(b2 + b3 * x), 
-              start = list(b1 = 0.1, b2 = 0.005, b3 = 0.01), verbose = verbose)
+  DAT1 <- cbind(x, y)
+  ONLS1 <- onls(y ~ exp(-b1 * x)/(b2 + b3 * x), data = DAT1,
+              start = list(b1 = 0.1, b2 = 0.005, b3 = 0.01))
   if (verbose) print(ONLS1)
   par(mar = c(2, 2, 2, 1))
   plot(ONLS1, main = "Chwirut2")
- 
+  
   ### Gauss1
   x <- 1:250
   y <- c(97.6223, 97.8072, 96.6225, 92.5902, 91.2387, 95.327, 90.3504, 
@@ -57,13 +58,14 @@ NIST <- function(verbose = FALSE)
        10.6621, 6.0354, 6.7907, 8.7835, 4.6003, 8.4009, 7.2166, 10.0174, 7.3313, 
        6.5279, 2.842, 10.3251, 4.791, 8.3771, 6.2644, 2.7062, 8.3623, 8.9837, 
        3.3626, 1.1827, 4.8754)
+  DAT2 <- cbind(x, y)
   ONLS2 <- onls(y ~ b1 * exp(-b2 * x) + b3 * exp(-(x - b4)^2/b5^2) + b6 * 
-                exp(-(x - b7)^2/b8^2), start = list(b1 = 100, b2 = 0.01, 
-                b3 = 100, b4 = 50, b5 = 20, b6 = 70, b7 = 200, b8 = 20), verbose = verbose)
+                exp(-(x - b7)^2/b8^2), data = DAT2, start = list(b1 = 100, b2 = 0.01, 
+                b3 = 100, b4 = 50, b5 = 20, b6 = 70, b7 = 200, b8 = 20))
   if (verbose) print(ONLS2)
   par(mar = c(2, 2, 2, 1))
   plot(ONLS2, main = "Gauss1")
-  
+ 
   ### ENSO
   x <- 1:168
   y <- c(12.9, 11.3, 10.6, 11.2, 10.9, 7.5, 7.7, 11.7, 12.9, 14.3, 10.9, 
@@ -80,22 +82,22 @@ NIST <- function(verbose = FALSE)
          9.5, 8.4, 10.7, 13.6, 13.7, 13.7, 16.5, 16.8, 17.1, 15.4, 9.5, 6.1, 
          10.1, 9.3, 5.3, 11.2, 16.6, 15.6, 12, 11.5, 8.6, 13.8, 8.7, 8.6, 8.6, 
          8.7, 12.8, 13.2, 14, 13.4, 14.8)
+  DAT3 <- cbind(x, y)
   ONLS3 <- onls(y ~ b1 + b2 * cos(2 * pi * x/12) + b3 * sin(2 * pi * x/12)
               + b5 * cos(2 * pi * x/b4) + b6 * sin(2 * pi * x/b4)
-              + b8 * cos(2 * pi * x/b7) + b9 * sin(2 * pi * x/b7), 
-              start = list(b1 = 10, b2 = 1, b3 = 1, b4 = 10, b5 = 0,
-                           b6 = 1, b7 = 10, b8 = 1, b9 = 1), verbose = verbose)
+              + b8 * cos(2 * pi * x/b7) + b9 * sin(2 * pi * x/b7), data = DAT3,
+              start = list(b1 = 10, b2 = 8, b3 = 0.5, b4 = 7, b5 = 1,
+                           b6 = 0.5, b7 = 4, b8 = 7, b9 = 6))
   if (verbose) print(ONLS3)
   par(mar = c(2, 2, 2, 1))
   plot(ONLS3, main = "ENSO")
-    
+  
   ## Rat43
   x <- 1:15
   y <- c(16.08, 33.83, 65.80, 97.20, 191.55, 326.20, 386.87, 520.53, 
          590.03, 651.92, 724.93, 699.56, 689.96, 637.56, 717.41)
-  ONLS4 <- onls(y ~ b1/(1 + exp(b2 - b3 * x))^(1/b4),   
-                start = list(b1 = 1000, b2 = -1, b3 = 0.1, b4 = 0.1),
-                extend = c(1, 1), verbose = verbose)
+  DAT4 <- cbind(x, y)
+  ONLS4 <- onls(y ~ b1*exp(-exp(c - b3*x)), data = DAT4, start = list(b1 = 800, c = 1, b3 = 0.2))
   if (verbose) print(ONLS4)
   plot(ONLS4, main = "Rat43") 
 }

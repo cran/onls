@@ -13,7 +13,7 @@ NIST(verbose = FALSE)
 }
 
 \arguments{
-\item{verbose}{logical. If \code{TRUE}, steps from the \code{\link{onls}} output are printed to the console.}
+\item{verbose}{logical. If \code{TRUE}, the \code{\link{onls}} output is printed to the console.}
 }
 
 

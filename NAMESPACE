@@ -10,14 +10,16 @@ check_o,
 NIST
 )
 
-importFrom("minpack.lm", nls.lm, nls.lm.control)
-importFrom("graphics", "lines", "par", "plot", "points")
+importFrom("minpack.lm", "nlsLM", "nls.lm", "nls.lm.control")
+importFrom("graphics", "lines", "par", "plot", "points", "legend", "matplot")
 importFrom("stats", ".checkMFClasses", "approx", "as.formula", "coef",
              "confint", "deviance", "fitted", "formula", "getInitial",
              "model.weights", "napredict", "naprint", "numericDeriv",
              "optimize", "printCoefmat", "profile", "pt", "qf", "qt",
-             "resid", "residuals", "spline", "symnum", "update")
-
+             "resid", "residuals", "spline", "symnum", "update", "deriv",
+             "nls", "nls.control", "optim", "setNames", "quantile")
+importFrom("rgl", "open3d", "surface3d", "points3d", "segments3d", "aspect3d", "title3d")
+importFrom("utils", "flush.console")
 
 ## S3 methods
 S3method(print, onls)
