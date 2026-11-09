@@ -118,8 +118,8 @@ $Qyy_i = WE_i$ and $Qx_i = WD_i$; Section 3.4 shows how to pass them to `onls()`
    $$r(\theta, \delta) = \Big(\big\{Qyy_i^{1/2}\,[y_i - f(x_i + \delta_i, \theta)]\big\}_{i=1}^{n},\;
    \big\{L_i\,\delta_i\big\}_{i=1}^{n}\Big), \qquad L_i^T L_i = Qx_i,$$
 
-   so that $S = r^T r$, and is solved by a single Levenberg-Marquardt run (`minpack.lm::nls.lm()`),
-   starting at the warm-start values with all $\delta_i = 0$. The Jacobian of $r$ has the sparse
+   so that $S = r^T r$, and is solved by Levenberg-Marquardt, starting at the warm-start values
+   with all $\delta_i = 0$. The Jacobian of $r$ has the sparse
    "arrow" structure of ODRPACK, because each $\delta_i$ only affects observation $i$:
 
    $$J = \begin{pmatrix} -W_y^{1/2} F_\theta & -W_y^{1/2} G \\ 0 & L_x \end{pmatrix},$$
@@ -129,10 +129,14 @@ $Qyy_i = WE_i$ and $Qx_i = WD_i$; Section 3.4 shows how to pass them to `onls()`
    supplies them exactly, by symbolic differentiation of the model formula and, if the formula
    cannot be differentiated (for example because it calls a user-defined function), by central
    finite differences.
-3. `nls.lm()` stops after 1024 iterations per call, so `onls()` restarts it from its last iterate
-   until it converges, a restart brings no further improvement, or the total budget
-   `control$outer_max` (default 5000 iterations) is used up. The convergence tolerances `ftol`
-   and `ptol` are settable through `control` (default `1e-10`).
+3. Two algorithms compute the Levenberg-Marquardt steps (`algorithm`); the default `"auto"` uses
+   `"structured"` for more than 100 observations or when parameter bounds are given, and `"dense"`
+   otherwise. `"structured"` eliminates the $n$ small $p \times p$ blocks of the foot-point corrections from
+   the normal equations, as ODRPACK does, and chooses the damping by MINPACK's trust-region rule;
+   its cost grows linearly with $n$. `"dense"` passes the full joint problem to
+   `minpack.lm::nls.lm()`, at a cost growing with $n^3$; it is needed only for the foot-point bounds
+   `extend`/`window` (used automatically then). Both stop when the convergence tolerances `ftol`
+   and `ptol` (default `1e-10`) are met or after `control$outer_max` iterations (default 5000).
 4. The parameter covariance is the ODRPACK (Gauss-Newton) covariance, i.e. the parameter block of
    $(J^T J)^{-1}$, which can be written with effective-variance weights as
 
@@ -152,12 +156,14 @@ At the solution, $\partial S / \partial \delta_i = 0$ gives the stationarity (KK
 $$Qx_i\,(\hat\xi_i - x_i) = Qyy_i\,\big(y_i - f(\hat\xi_i, \hat\theta)\big)\,\nabla_x f(\hat\xi_i, \hat\theta).$$
 
 For unit precisions this says that the vector from the foot point to the observation is
-orthogonal to the model surface. `check_o()` verifies it after fitting -- either via the classical
-tangent-angle criterion (unweighted case, where a right angle is literally expected; the angle is
-computed with `atan2()` so that points whose foot point coincides with the observation are handled
-correctly) or via the relative residual of the stationarity condition (weighted case, where a plain
-right angle is no longer the correct geometric picture). The tolerances are `tol_deg` (default
-$0.05^\circ$) and `tol_kkt` (default $0.001$). We'll use it throughout.
+orthogonal to the model surface. With precisions, the same holds after each axis is rescaled by
+its precision ("whitened" coordinates $L_i x$ and $Qyy_i^{1/2} y$, with $L_i^T L_i = Qx_i$), where the
+weighted distance becomes an ordinary Euclidean one. `check_o()` therefore computes, for every
+observation, the angle $\alpha_i$ between the residual vector and the tangent space of the model
+surface in these coordinates: $90^\circ$ at a stationary foot point, for any number of predictors and
+any form of `sigma_x`, including correlated predictor errors. For one predictor and unit precisions
+this is the classical tangent angle. The tolerance is `tol_deg` (default $0.05^\circ$); observations
+that lie on the fitted surface have no angle and count as orthogonal. We'll use it throughout.
 
 ## 3. A univariate example
 
@@ -198,11 +204,11 @@ check_o(mod_uni, plot = FALSE)
 ### 3.1 Foot points and orthogonal residuals
 
 The foot points $(\hat\xi_i, f(\hat\xi_i, \hat\theta))$ are available through `x0()` and `y0()`
-(for single-predictor models in the sorted predictor order that `check_o()` uses as well).
+in the original observation order, like every other per-observation result.
 Together with the observations they give the orthogonal distances by hand:
 
 ```{r foot-points}
-FP <- data.frame(x = mod_uni$pred, x0 = x0(mod_uni), y = mod_uni$resp, y0 = y0(mod_uni))
+FP <- data.frame(x = DNase1$conc, x0 = x0(mod_uni), y = DNase1$density, y0 = y0(mod_uni))
 FP$dist <- sqrt((FP$x - FP$x0)^2 + (FP$y - FP$y0)^2)
 head(FP)
 
@@ -211,14 +217,13 @@ all.equal(sum(FP$dist^2), deviance_o(mod_uni))
 ```
 
 `residuals_o()` returns the fitted, precision-weighted orthogonal distances $\hat d_i$ -- the
-per-observation quantities that `deviance_o()` squares and sums -- directly, and in the
-**original observation order** (whereas `x0()`/`y0()` follow the sorted predictor order for a
-single predictor). For an unweighted single-predictor fit such as this one they are plain Euclidean
-distances, i.e. the `dist` column above in a different order:
+per-observation quantities that `deviance_o()` squares and sums -- directly, also in the
+original observation order. For an unweighted single-predictor fit such as this one they are plain
+Euclidean distances, i.e. the `dist` column above:
 
 ```{r orthogonal-residuals}
 d_o <- residuals_o(mod_uni)
-all.equal(sort(d_o), sort(FP$dist), check.attributes = FALSE)
+all.equal(d_o, FP$dist, check.attributes = FALSE)
 all.equal(sum(d_o^2), deviance_o(mod_uni))
 
 ## side by side with the vertical residuals of the same fit
@@ -281,9 +286,9 @@ mod_w <- onls(y ~ b0 + b1 * x, data = DAT_py, start = list(b0 = 5, b1 = -0.5),
 summary(mod_w)   # intercept 5.480 (0.295), slope -0.481 (0.058), matching York's published values
 ```
 
-Since this fit is weighted, `check_o()` automatically switches from the tangent-angle criterion to
-the underlying KKT-residual criterion (a plain right angle is no longer the geometrically correct
-picture once the axes are rescaled by unequal precisions):
+For this weighted fit, `check_o()` measures the angle after rescaling each axis by its precision
+(in these whitened coordinates the weighted distance is Euclidean again), so 90 degrees is still the
+criterion:
 
 ```{r weighted-check}
 check_o(mod_w, plot = FALSE)
@@ -323,7 +328,10 @@ all.equal(sum(WE * (y - f(xi, coef(mod_we)))^2 + WD * (xi - x)^2), mod_we$object
 
 ## 4. Reference problems from the literature
 
-`onls()` reproduces the published results of the standard ODRPACK test problems.
+`onls()` reproduces the published results of the standard ODRPACK test problems. A few of them
+are shown here; `doGauge()` runs all reference comparisons of the package (published results,
+closed-form solutions, ODRPACK and the NIST certified values) and reports each as PASS, NOTE or
+DIFF.
 
 ### 4.1 ODRPACK guide, example 2.C.i
 
@@ -519,7 +527,7 @@ With more than two predictors, `plot.onls()` draws a grid of partial-dependence 
 not a literally faithful orthogonality check: the drawn curve fixes the *other* predictors at a
 shared mean value, whereas each point's own segment ends at its own foot point in every dimension,
 so the segments should not be expected to look exactly perpendicular even for an unweighted fit.
-Use `check_o()` for a reliable per-observation, per-axis check:
+Use `check_o()` for a reliable per-observation check:
 
 ```{r multivariate-grid, fig.width = 7, fig.height = 7, fig.alt = "Grid of four partial-dependence panels"}
 plot(mod_mv)
@@ -585,7 +593,7 @@ Deming regression -- a linear model with known (or assumed) ratio of the predict
 variances -- is just `onls()` with a linear formula and appropriate `sigma_x`/`sigma_y`, as in the
 Pearson-York example above. With the default equal error variances it is orthogonal regression;
 the example below reproduces the XLSTAT Deming regression demonstration
-(<https://help.xlstat.com/6650-run-deming-regression-compare-methods-excel>):
+(XLSTAT help article "Run a Deming regression to compare methods", now in the Lumivero XLSTAT knowledge base):
 
 ```{r deming}
 x <- c(9.8, 9.7, 10.7, 10.9, 12.4, 12.5, 12.8, 12.8, 12.9, 13.3,
@@ -640,7 +648,7 @@ print(data.frame(TLS_closed_form = TLS_vec, onls = ONLS_vec,
 
 `lower` and `upper` bound the model parameters (one value per parameter, in the order of `start`).
 This example with bounds comes from the `simple_example.f90` of TOMS 869
-(<https://www.netlib.org/toms/869.zip>); Section 5.1 shows a bound that keeps a model inside its
+(<https://netlib.org/toms/869.zip>); Section 5.1 shows a bound that keeps a model inside its
 domain:
 
 ```{r bounds}
@@ -737,43 +745,99 @@ the ordinary least-squares fit that `onls()` starts from, and choosing `sigma_x`
 reflect the actual measurement errors -- in particular a small `sigma_x` for a predictor that is
 essentially error-free, such as a time index.
 
-`logLik_o()` includes a precision-based normalizing correction, so `AIC()`/`BIC()` built from it
-are valid for comparing fits that used *different* weighting schemes -- as long as they were fit to
-the *same* data (the same response and number of observations). Here we fit the DNase model a
-second time, now with `sigma_x`/`sigma_y` supplied, and compare it against the original unweighted
-fit from Section 3:
+`logLik_o()` is the log-likelihood of the errors-in-variables model: each observation contributes
+$1 + p$ Gaussian error components (response and predictors) with the precisions given by
+`weights`, `sigma_x` and `sigma_y`. With known variances the scale is 1, otherwise it is
+estimated, and the foot points are maximized out without being counted as parameters. `AIC()`/`BIC()`
+built from it compare `onls()` fits to the *same* data with the *same* error variances, e.g. two
+model functions. (The ratio of predictor to response variance cannot be chosen this way: the
+likelihood is unbounded as the ratio tends to zero.) Here we compare the three-parameter logistic
+model with a four-parameter one, both with known error variances:
 
 ```{r loglik-compare}
-mod_uni_w <- onls(density ~ Asym / (1 + exp((xmid - log(conc)) / scal)),
-                  data = DNase1, start = list(Asym = 3, xmid = 0, scal = 1),
-                  sigma_x = 0.05, sigma_y = 0.1)
-AIC(logLik_o(mod_uni))
-AIC(logLik_o(mod_uni_w))
+mod_3 <- onls(density ~ Asym / (1 + exp((xmid - log(conc)) / scal)),
+              data = DNase1, start = list(Asym = 3, xmid = 0, scal = 1),
+              sigma_x = 0.05, sigma_y = 0.1)
+mod_4 <- onls(density ~ y0 + (Asym - y0) / (1 + exp((xmid - log(conc)) / scal)),
+              data = DNase1, start = list(y0 = 0, Asym = 3, xmid = 0, scal = 1),
+              sigma_x = 0.05, sigma_y = 0.1)
+c(AIC(logLik_o(mod_3)), AIC(logLik_o(mod_4)))
 ```
 
 ### 9.1 Confidence intervals: `confint()`
 
-`confint()` computes **bootstrap** confidence intervals for all parameters. Unlike `confint.nls()`,
-which uses profile likelihoods, it refits the orthogonal model to nonparametric case resamples of
-the data, and it is therefore fully consistent with the criterion that `onls()` minimizes. In each
-replicate the rows of the data are resampled with replacement and the model is refitted with
-`onls()`; fits that fail to converge or violate the internal orthogonality checks are discarded, as
-are pathological solutions that deviate from the original estimate by more than twenty standard
-errors. After `k` successful fits, the limits are the empirical quantiles of the bootstrap
-distribution (`level`, default $0.95$). Further arguments are passed to `update.onls()`.
+`confint()` offers three kinds of intervals through `method`:
 
-Because `k` refits are needed, this takes a while. We use `k = 100` here to keep the build time
-short -- in practice, take `k >= 200`:
+* `"profile"` (default): each parameter is held fixed on a grid around its estimate while all other
+  parameters and all foot points are re-optimized (`profile()`); the limits are where the increase
+  of the orthogonal objective reaches the $t$ (estimated variances) or normal (known variances)
+  quantile. Profile intervals follow the shape of the objective, so they can be asymmetric.
+* `"wald"`: estimate $\pm$ quantile $\times$ standard error, from `vcov()`. Instant, and accurate for
+  well-determined parameters, but symmetric by construction.
+* `"boot"`: nonparametric case bootstrap with `k` refits. The rows are resampled together with
+  their `weights`, `sigma_x` and `sigma_y`; at most `max_tries` refits are attempted.
+
+For the DNase fit of Section 3, the three methods tell different stories about `Asym` and `xmid`.
+With `Asym` held fixed at 10, 20, 50 or 100, the other parameters compensate and the objective rises
+only to $\tau = 1.07, 1.25, 1.36, 1.39$, below the 95 % quantile $t_{0.975}(13) = 2.16$: the data do not
+bound `Asym` from above. The profile reports this as `NA` (with a warning), the bootstrap gives an
+upper quantile far beyond the data, and the Wald interval hides it, because it is symmetric by
+construction. `scal` is well determined, and there the three methods are much closer:
 
 ```{r confint}
+confint(mod_uni)                     # profile
+confint(mod_uni, method = "wald")
 set.seed(123)
-confint(mod_uni, k = 100)
+confint(mod_uni, method = "boot", k = 200)
 ```
+
+`plot(profile(mod_uni))` shows the profiles themselves.
+
+### 9.2 Predictions: `predict()`
+
+`predict()` gives confidence intervals for the model function and prediction intervals for a new
+measurement. In the errors-in-variables model, a new observation has errors in its response *and*
+its predictor, so the prediction variance adds the effective variance of ODR to the variance of
+the fitted value: $se^2 = se_{fit}^2 + s^2(\sigma_y^2 + g^T\Sigma_x g)$, with $g$ the slope of the
+model at the new predictor value. With known variances ($s = 1$) the quantiles are normal,
+otherwise $t$ with `df_resid` degrees of freedom. `sigma_x = 0` gives the interval for a new
+observation at an exactly known predictor:
+
+```{r predict}
+nd <- data.frame(conc = c(0.1, 1, 10))
+predict(mod_3, nd, interval = "confidence")
+predict(mod_3, nd, interval = "prediction")
+predict(mod_3, nd, interval = "prediction", sigma_x = 0)
+```
+
+### 9.3 Speed: the two algorithms
+
+Both algorithms minimize the same objective and give the same estimates; they differ in cost. For
+a sigmoid with $n = 400$ observations:
+
+```{r algorithms}
+set.seed(1)
+n <- 400
+xt <- seq(0, 10, length.out = n)
+DAT_big <- data.frame(x = xt + rnorm(n, 0, 0.2), y = 5 / (1 + exp(-(xt - 5))) + rnorm(n, 0, 0.2))
+t_s <- system.time(m_s <- onls(y ~ b1 / (1 + exp(-(x - b2) / b3)), data = DAT_big,
+                               start = list(b1 = 4, b2 = 4, b3 = 1.5)))[["elapsed"]]
+t_d <- system.time(m_d <- onls(y ~ b1 / (1 + exp(-(x - b2) / b3)), data = DAT_big,
+                               start = list(b1 = 4, b2 = 4, b3 = 1.5), algorithm = "dense"))[["elapsed"]]
+data.frame(algorithm = c("structured", "dense"), seconds = c(t_s, t_d),
+           rbind(coef(m_s), coef(m_d)))
+```
+
+With the default `algorithm = "auto"`, the structured algorithm is used for $n > 100$ and for fits
+with parameter bounds; otherwise,
+the compiled `minpack.lm` code of the dense algorithm has less overhead per iteration. The dense
+algorithm grows with $n^3$ (about 15 s at $n = 1000$ and 150 s at $n = 2000$), the
+structured one linearly (about 2 s at $n = 100\,000$).
 
 ### Further reading
 
 See `?onls` for the full mathematical details (construction of $Qyy_i$/$Qx_i$, the joint
 Levenberg-Marquardt algorithm, `fixed` parameters and bounds, and the approximate parameter
-covariance), `?check_o` for the two orthogonality criteria in detail, and the reference list in
+covariance), `?check_o` for the orthogonality criterion in detail, and the reference list in
 `?onls` for the underlying literature (Boggs, Byrd, Rogers & Schnabel's ODRPACK, York's weighted
 linear regression, and Daeron & Vermeesch's generalized least squares framing).

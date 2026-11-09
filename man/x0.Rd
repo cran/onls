@@ -20,14 +20,14 @@ y0(object)
 
 \details{
 For a single-predictor (\eqn{p=1}), unweighted \code{\link{onls}} fit, the foot point \eqn{\hat\xi_i} (returned by \code{x0}) is obtained by minimizing the plain Euclidean distance between the observation \eqn{(x_i, y_i)} and a point \eqn{(\xi_i, f(\xi_i,\hat\theta))} on the fitted curve,
-\deqn{\min_{\xi_i} \sqrt{(x_i-\xi_i)^2 + \left[y_i-f(\xi_i,\hat\theta)\right]^2}.}
+\deqn{\min_{\xi_i} \sqrt{(x_i-\xi_i)^2 + \left[y_i-f(\xi_i,\hat\theta)\right]^2}}
 More generally -- for multivariate models (\eqn{p>1}) and/or fits using \code{weights}, \code{sigma_x}, or \code{sigma_y} -- \code{\link{onls}} instead minimizes a precision-weighted quadratic form (see 'Details' in \code{\link{onls}} for the full construction),
-\deqn{\min_{\xi_i} \; Qyy_i \left[y_i - f(\xi_i,\hat\theta)\right]^2 + (\xi_i-x_i)^T Qx_i (\xi_i-x_i),}
+\deqn{\min_{\xi_i} \; Qyy_i \left[y_i - f(\xi_i,\hat\theta)\right]^2 + (\xi_i-x_i)^T Qx_i (\xi_i-x_i)}
 which reduces to the plain Euclidean distance above only when \eqn{p=1} and \eqn{Qyy_i = Qx_i = 1} (the default, unweighted case) -- Euclidean distance is therefore a special case of the criterion minimized, not the general rule.
 
-\code{x0} returns \eqn{\hat\xi_i}: a length-\eqn{n} vector for single-predictor models, or an \eqn{n \times p} matrix (one column per predictor, in the order given by \code{object$pred_names}) for multivariate models. \code{y0} returns \eqn{f(\hat\xi_i,\hat\theta)}, always a length-\eqn{n} vector, since the response is univariate regardless of \eqn{p}.
+\code{x0} returns \eqn{\hat\xi_i}: a length-\eqn{n} vector for single-predictor models, or an \eqn{n \times p} matrix (one column per predictor, in the order of the predictors in the formula, as in \code{object$X_obs}) for multivariate models. \code{y0} returns \eqn{f(\hat\xi_i,\hat\theta)}, always a length-\eqn{n} vector, since the response is univariate regardless of \eqn{p}.
 
-For single-predictor models, values are returned in the internally-used sorted-predictor order (matching \code{object$pred}/\code{object$resp}), not necessarily the original row order of the input data; for multivariate models, sorting is a no-op and the original observation order is used.
+Values are returned in the original observation order (after \code{subset}), with \code{NA} re-inserted at the positions of observations removed by \code{na.action = na.exclude}, so that they line up with the rows of the data (they are taken from the \code{xi} and \code{yi} components of the fit). Before version 0.2-1, single-predictor models returned them sorted by the predictor.
 }
 
 \value{

@@ -2,98 +2,54 @@ convInfo <- function(x, digits, show. = getOption("show.nls.convergence", TRUE))
 {
   if (!is.null(x$convInfo)) 
     with(x$convInfo, {
-      if (identical(x$call$algorithm, "port")) 
-        cat("\nAlgorithm \"port\", convergence message: ", 
-            stopMessage, "\n", sep = "")
-      else {
-        if (!isConv || show.) {
-          cat("\nNumber of iterations", if (isConv) 
-            "to convergence:"
-            else "till stop:", finIter, "\nAchieved convergence tolerance:", 
-            format(finTol, digits = digits))
-          cat("\n")
-        }
-        if (!isConv) {
-          cat("Reason stopped:", stopMessage)
-          cat("\n")
-        }
+      if (!isConv || show.) {
+        cat("\nNumber of iterations", if (isConv) "to convergence:" else "till stop:", finIter, 
+            "\nConvergence tolerance (ftol):", format(finTol, digits = digits))
+        cat("\n")
+      }
+      if (!isConv) {
+        cat("Reason stopped:", stopMessage)
+        cat("\n")
       }
     })
   invisible()
 }
 
-coef.onls <- function(object, ...)
-{
-  unlist(object$parONLS)
+.napred <- function(object, val, label) {
+  if (!is.null(object$na.action)) val <- napredict(object$na.action, val)
+  attr(val, "label") <- label
+  val
 }
+.q_free <- function(object) length(object$coefficients) - (if (!is.null(object$fixed)) sum(as.logical(object$fixed)) else 0L)
 
-formula.onls <- function(x, ...)
-{
-  x$formula
-}
-
-weights.onls <- function(object, ...)
-{
-  object$weights
-}
-
-vcov.onls <- function(object, ...)
-{
-  ## object$vcov is already correctly scaled by onls() itself (see
-  ## summary.onls()'s cov.unscaled logic / Details)
-  object$vcov
-}
-
+coef.onls        <- function(object, ...) object$coefficients
+formula.onls     <- function(x, ...) x$formula
+weights.onls     <- function(object, ...) object$weights
+vcov.onls        <- function(object, ...) object$vcov       # already scaled by onls() (see summary.onls)
 df.residual.onls <- function(object, ...) object$df_resid 
 
 residuals.onls <- function(object, ...)
-{
-  val <- as.vector(object$residONLS)
-  if (!is.null(object$na.action)) 
-    val <- napredict(object$na.action, val)
-  lab <- "Vertical residuals from orthogonal model"
-  attr(val, "label") <- lab
-  val  
-}
+  .napred(object, as.vector(object$y_obs - object$fittedONLS), "Vertical residuals from orthogonal model")
 
 fitted.onls <- function(object, ...)
-{
-  val <- as.vector(object$fittedONLS)
-  if (!is.null(object$na.action)) 
-    val <- napredict(object$na.action, val)
-  lab <- "Fitted values from orthogonal model"
-  attr(val, "label") <- lab
-  val  
-}
+  .napred(object, as.vector(object$fittedONLS), "Fitted values from orthogonal model")
 
 deviance.onls <- function(object, ...)
 {
-  val <- sum(object$weights * object$residONLS^2)
-  lab <- "(Weighted) Deviance (RSS) of vertical residuals from orthogonal model"
-  attr(val, "label") <- lab
+  val <- sum(object$weights * (object$y_obs - object$fittedONLS)^2)
+  attr(val, "label") <- "(Weighted) Deviance (RSS) of vertical residuals from orthogonal model"
   val  
 }
 
 logLik.onls <- function(object, REML = FALSE, ...) 
 {
   if (REML) stop("cannot calculate REML log-likelihood for \"onls\" objects")
-  res <- object$residONLS
-  N <- length(res)
-  if (is.null(w <- object$weights)) w <- rep_len(1, N)
-  
-  ## Zero-weight observations are excluded entirely (matching R's own
-  ## stats:::logLik.lm), rather than neutralized in place
-  excl <- w == 0
-  if (any(excl)) {
-    res <- res[!excl]
-    w   <- w[!excl]
-    N   <- length(res)
-  }
-  
+  res <- object$y_obs - object$fittedONLS
+  w   <- object$weights
+  keep <- w > 0                     # zero-weight observations are excluded, as in stats:::logLik.lm
+  res <- res[keep]; w <- w[keep]; N <- length(res)
   val <- 0.5 * (sum(log(w)) - N * (log(2 * pi) + 1 - log(N) + log(sum(w * res^2))))
-  
-  q_free <- object$q - if (!is.null(object$fixed)) sum(as.logical(object$fixed)) else 0L
-  attr(val, "df") <- 1L + q_free
+  attr(val, "df") <- 1L + .q_free(object)
   attr(val, "nobs") <- attr(val, "nall") <- N
   attr(val, "label") <- "Log-likelihood using vertical residuals from orthogonal model"
   class(val) <- "logLik.onls"
@@ -108,18 +64,37 @@ print.logLik.onls <- function(x, digits = getOption("digits"), ...)
   invisible(x)
 }
 
+## Predictions at new predictor values. Confidence intervals: uncertainty of f(x, theta) from the
+## parameters. Prediction intervals: a new observation (y, x) measured with the errors of the
+## model, Var = Var(f) + s^2 (sigma_y^2 + g' Sigma_x g), g = df/dx at x (effective variance),
+## with s^2 = 1 for known variances and the reduced chi-square otherwise.
+## g' Sigma_x g for new observations, sigma_x in any form of onls() (standard deviations, or a
+## p x p covariance matrix); zeros are allowed (error-free predictor)
+.gSg_new <- function(G, sigma_x)
+{
+  m <- nrow(G); p <- ncol(G)
+  if (anyNA(sigma_x)) stop("`sigma_x` must not contain NA.")
+  if (is.matrix(sigma_x) && all(dim(sigma_x) == c(p, p))) {                ## a p x p matrix is always a covariance
+    if (!isSymmetric(unname(sigma_x))) stop("A p x p `sigma_x` is a covariance matrix and must be symmetric.")
+    return(pmax(.rowSums((G %*% sigma_x) * G, m, p), 0))
+  }
+  if (is.data.frame(sigma_x)) sigma_x <- as.matrix(sigma_x)              ## per-row SDs (also for m = p)
+  if (any(sigma_x < 0)) stop("`sigma_x` must be non-negative.")
+  S <- if (is.matrix(sigma_x)) sigma_x
+       else if (length(sigma_x) == 1L || length(sigma_x) == p) matrix(sigma_x, m, p, byrow = TRUE)
+       else if (p == 1L && length(sigma_x) == m) matrix(sigma_x, m, 1L)
+       else stop("`sigma_x` must be a scalar, a length-p vector, a p x p covariance matrix or an m x p matrix.")
+  .rowSums((G * S)^2, m, p)
+}
+
 predict.onls <- function(object, newdata, se.fit = FALSE, scale = NULL, df = NULL,
                          interval = c("none", "confidence", "prediction"),
-                         level = 0.95, ...)
+                         level = 0.95, sigma_x = NULL, sigma_y = NULL, ...)
 {
   interval <- match.arg(interval)
-  xnms  <- object$pred_names
-  pnms  <- object$param_names
-  theta <- object$parONLS
-  
-  if (missing(newdata)) {
-    newdata <- as.data.frame(object$X_obs)  
-  } else {
+  xnms <- .xnames(object); pnms <- .pnames(object); theta <- object$coefficients
+  if (missing(newdata)) newdata <- as.data.frame(object$X_obs)
+  else {
     missing_cols <- setdiff(xnms, names(newdata))
     if (length(missing_cols)) stop("`newdata` is missing predictor column(s): ", paste(missing_cols, collapse = ", "))
     if (!is.null(cl <- object$dataClasses)) {
@@ -127,108 +102,92 @@ predict.onls <- function(object, newdata, se.fit = FALSE, scale = NULL, df = NUL
       if (length(cl_pred)) .checkMFClasses(cl_pred, newdata)
     }
   }
-  
-  env_base <- list()
-  for (nm in xnms) env_base[[nm]] <- newdata[[nm]]
-  for (nm in pnms) env_base[[nm]] <- theta[[nm]]
-  env_base <- as.data.frame(env_base)
-  
-  fit <- eval(object$formula[[3L]], envir = env_base)
+  Xnew  <- as.matrix(as.data.frame(newdata)[xnms]); m <- nrow(Xnew)
+  env_f <- environment(object$formula); if (is.null(env_f)) env_f <- globalenv()
+  rhs   <- object$formula[[3L]]
+  f_eval <- function(th, Xi, strict = FALSE) .eval_nl(rhs, th, pnms, Xi, xnms, env_f, strict)
+  fit <- f_eval(theta, Xnew, strict = TRUE)
   if (!se.fit && interval == "none") return(fit)
   
-  ## Only the FREE (non-fixed) parameters have rows/columns in
-  ## object$vcov (fixed parameters carry zero uncertainty by
-  ## construction, SE = NA/0 throughout the package)
-  FIXSEL    <- if (!is.null(object$fixed)) which(as.logical(object$fixed)) else integer(0)
-  freeSEL   <- setdiff(seq_along(theta), FIXSEL)
-  pnms_free <- pnms[freeSEL]
+  gr   <- .make_model_grad(rhs, pnms, xnms, f_eval, env_f)(theta, Xnew)
+  free <- if (!is.null(object$fixed)) !as.logical(object$fixed) else rep(TRUE, length(theta))
+  J    <- gr$Jth[, free, drop = FALSE]
+  V    <- object$vcov[free, free, drop = FALSE]
+  se_fit <- sqrt(pmax(.rowSums((J %*% V) * J, m, ncol(J)), 0))
+  known  <- isTRUE(object$known_sigma)
+  df_use <- if (!is.null(df)) df else if (known) Inf else object$df_resid
+  s2_fit <- if (known) 1 else object$reduced_chisq                        ## scale in vcov(object)
+  s2     <- if (!is.null(scale)) scale^2 else s2_fit
+  if (!is.null(scale)) se_fit <- se_fit * sqrt(s2 / s2_fit)                ## as predict.lm(scale =)
   
-  eps <- .Machine$double.eps^(1/3) * pmax(abs(unlist(theta)), 1e-3)
-  J   <- matrix(NA_real_, length(fit), length(freeSEL), dimnames = list(NULL, pnms_free))
-  for (jj in seq_along(freeSEL)) {
-    j <- freeSEL[jj]
-    env_up <- env_base
-    env_up[[pnms[j]]] <- theta[[j]] + eps[j]
-    env_dn <- env_base
-    env_dn[[pnms[j]]] <- theta[[j]] - eps[j]
-    f_up <- eval(object$formula[[3L]], envir = env_up)
-    f_dn <- eval(object$formula[[3L]], envir = env_dn)
-    J[, jj] <- (f_up - f_dn) / (2 * eps[j])
+  out <- fit; se_used <- se_fit
+  if (interval == "prediction") {
+    if (!is.null(sigma_y) && !(length(sigma_y) %in% c(1L, m))) stop("`sigma_y` must have length 1 or nrow(newdata).")
+    sy <- if (!is.null(sigma_y)) rep_len(sigma_y, m) else if (length(object$sigma_y) == 1L) rep(object$sigma_y, m) else
+      stop("The fit used observation-specific `sigma_y`: supply `sigma_y` for `newdata`.")
+    if (is.null(sigma_y) && diff(range(object$weights[object$weights > 0])) > 0)
+      warning("The fit used non-constant `weights`: the prediction interval is for a new observation of weight 1 ",
+              "(standard deviation `sigma_y`); supply `sigma_y` for newdata to set its response error.")
+    G <- matrix(gr$Gx, m, length(xnms))
+    gSg <- if (!is.null(sigma_x)) .gSg_new(G, sigma_x)                 ## sigma_x = 0 allowed here
+           else if (!isTRUE(object$per_obs_x)) .rowSums(.Lt_solve(object$Lx[rep(1L, m), , , drop = FALSE], G)^2, m, ncol(G))
+           else stop("The fit used observation-specific `sigma_x`: supply `sigma_x` for `newdata`.")
+    se_used <- sqrt(se_fit^2 + s2 * (sy^2 + gSg))
   }
-  
-  se_fit <- sqrt(pmax(rowSums((J %*% object$vcov) * J), 0))
-  df_use <- if (is.null(df)) object$df_resid else df
-  
-  sigma_vert <- if (!is.null(scale)) scale else sqrt(sum(object$weights * object$residONLS^2) / object$df_resid)
-  
   if (interval != "none") {
-    tval <- qt(1 - (1 - level) / 2, df_use)
-    se_used <- if (interval == "confidence") se_fit else sqrt(se_fit^2 + sigma_vert^2)
-    out <- cbind(fit = fit, lwr = fit - tval * se_used, upr = fit + tval * se_used)
-  } else out <- fit
-  
-  if (se.fit) return(list(fit = out, se.fit = se_fit, df = df_use, residual.scale = sigma_vert))
+    qq  <- if (is.finite(df_use)) qt(1 - (1 - level) / 2, df_use) else qnorm(1 - (1 - level) / 2)
+    out <- cbind(fit = fit, lwr = fit - qq * se_used, upr = fit + qq * se_used)
+  }
+  if (se.fit) return(list(fit = out, se.fit = se_fit, df = df_use, residual.scale = sqrt(s2)))
   out
 }
-
 
 print.onls <- function(x, ...) 
 {
   digits <- max(3L, getOption("digits") - 3L)
+  wtd <- if (diff(range(x$weights))) "weighted " else ""
   cat("Nonlinear orthogonal regression model\n")
   cat("  model: ", deparse(formula(x)), "\n", sep = "")
   cat("   data: ", deparse(x$data), "\n", sep = "")
   print(coef(x), digits = digits, ...)
-  cat(" ", if (!is.null(x$weights) && diff(range(x$weights))) "weighted ", "vertical residual sum-of-squares: ", format(deviance(x), digits = digits), "\n", sep = "")
-  cat(" ", if (!is.null(x$weights) && diff(range(x$weights))) "weighted ", "orthogonal residual sum-of-squares: ", format(deviance_o(x), digits = digits), "\n", sep = "")
-  if (sum(x$ortho == TRUE) == length(x$ortho)) cat(" PASSED: ", sum(x$ortho == TRUE), " out of ", length(x$ortho), " fitted points are orthogonal.\n", sep = "")
-  else cat(" FAILED: Only ", sum(x$ortho == TRUE), " out of ", length(x$ortho), " fitted points are orthogonal.\n", sep = "")
+  cat(" ", wtd, "vertical residual sum-of-squares: ", format(deviance(x), digits = digits), "\n", sep = "")
+  cat(" ", wtd, "orthogonal residual sum-of-squares: ", format(deviance_o(x), digits = digits), "\n", sep = "")
+  n_ok <- sum(x$ortho %in% TRUE)
+  if (all(is.na(x$ortho))) cat(" Orthogonality of the fitted points could not be checked.\n")
+  else if (n_ok == length(x$ortho)) cat(" PASSED: ", n_ok, " out of ", length(x$ortho), " fitted points are orthogonal.\n", sep = "")
+  else cat(" FAILED: Only ", n_ok, " out of ", length(x$ortho), " fitted points are orthogonal.\n", sep = "")
   convInfo(x, digits = digits)
   invisible(x)
 }
 
 summary.onls <- function(object, correlation = FALSE, symbolic.cor = FALSE, ...)
 {
-  residONLS <- as.vector(object$residONLS)
-  param  <- coef(object)
-  pnames <- names(param)
-  q      <- length(pnames)
-  
-  FIXSEL  <- if (!is.null(object$fixed)) which(as.logical(object$fixed)) else integer(0)
-  freeSEL <- setdiff(seq_len(q), FIXSEL)
-  q_free  <- length(freeSEL)
-  
-  rdf <- object$df_resid
-  
-  resvarONLS <- if (rdf <= 0) NaN else deviance(object)/rdf
-  resvar_o   <- if (rdf <= 0) NaN else deviance_o(object)/rdf
-  
-  Vcov <- object$vcov          # q_free x q_free
-  se   <- object$std_errors    # length q, 0 at fixed positions
-  
-  tval <- pval <- setNames(rep(NA_real_, q), pnames)
-  tval[freeSEL] <- param[freeSEL] / se[freeSEL]
-  pval[freeSEL] <- 2 * pt(abs(tval[freeSEL]), rdf, lower.tail = FALSE)
-  se_out <- se
-  se_out[FIXSEL] <- NA_real_
-  
+  param  <- coef(object); pnames <- names(param); q <- length(pnames)
+  freeSEL <- if (!is.null(object$fixed)) which(!as.logical(object$fixed)) else seq_len(q)
+  rdf  <- object$df_resid
+  known <- isTRUE(object$known_sigma)
+  Vcov <- object$vcov
+  se   <- object$std_errors
+  ## known variances: normal distribution (z), otherwise t with df_resid degrees of freedom
+  tval <- pval <- se_out <- setNames(rep(NA_real_, q), pnames)
+  se_out[freeSEL] <- se[freeSEL]
+  tval[freeSEL]   <- param[freeSEL] / se[freeSEL]
+  pval[freeSEL]   <- 2 * (if (known) pnorm(abs(tval[freeSEL]), lower.tail = FALSE) else pt(abs(tval[freeSEL]), rdf, lower.tail = FALSE))
   param <- cbind(param, se_out, tval, pval)
-  dimnames(param) <- list(pnames, c("Estimate", "Std. Error", "t value", "Pr(>|t|)"))
-  sigmaONLS <- sqrt(resvarONLS)
+  dimnames(param) <- list(pnames, c("Estimate", "Std. Error", if (known) c("z value", "Pr(>|z|)") else c("t value", "Pr(>|t|)")))
   
   chisq <- object$reduced_chisq
-  cov.unscaled <- if (isTRUE(object$known_sigma) || is.null(chisq) ||
-                      !is.finite(chisq) || chisq <= 0) Vcov else Vcov / chisq
-  
-  out <- list(formula = formula(object), residONLS = residONLS, sigmaONLS = sigmaONLS,
-              sigma_o = sqrt(resvar_o), df = c(q_free, rdf), cov.unscaled = cov.unscaled,
+  cov.unscaled <- if (known || is.null(chisq) || !is.finite(chisq) || chisq <= 0) Vcov else Vcov / chisq
+  out <- list(formula = formula(object), residONLS = residuals(object),
+              sigmaONLS = if (rdf <= 0) NaN else sqrt(deviance(object) / rdf),
+              sigma_o = if (rdf <= 0) NaN else sqrt(deviance_o(object) / rdf),
+              df = c(length(freeSEL), rdf), cov.unscaled = cov.unscaled,
               call = object$call, convInfo = object$convInfo, control = object$control,
               na.action = object$na.action, coefficients = param, parameters = param,
-              known_sigma = object$known_sigma, reduced_chisq = object$reduced_chisq)
-  
+              known_sigma = known, reduced_chisq = chisq)
   if (correlation && rdf > 0) {
     se_free <- se[freeSEL]
-    out$correlation <- Vcov / outer(se_free, se_free)
+    out$correlation <- Vcov[freeSEL, freeSEL, drop = FALSE] / outer(se_free, se_free)
     dimnames(out$correlation) <- list(pnames[freeSEL], pnames[freeSEL])
     out$symbolic.cor <- symbolic.cor
   }
@@ -241,27 +200,20 @@ print.summary.onls <- function(x, digits = max(3L, getOption("digits") - 3L),
                                signif.stars = getOption("show.signif.stars"), ...) 
 {
   cat("\nFormula: ", paste(deparse(x$formula), sep = "\n", collapse = "\n"), "\n", sep = "")
-  df <- x$df
-  rdf <- df[2L]
-  cat("\nParameters:\n")
+  rdf <- x$df[2L]
+  cat("\nParameters", if (isTRUE(x$known_sigma)) " (variances known: z values)", ":\n", sep = "")
   printCoefmat(x$coefficients, digits = digits, signif.stars = signif.stars, ...)
   cat("\nResidual standard error of vertical distances:", format(signif(x$sigmaONLS, digits)), "on", rdf, "degrees of freedom")
   cat("\nResidual standard error of orthogonal distances:", format(signif(x$sigma_o, digits)), "on", rdf, "degrees of freedom")
   cat("\n")
   correl <- x$correlation
-  if (!is.null(correl)) {
-    p <- NCOL(correl)
-    if (p > 1) {
-      cat("\nCorrelation of Parameter Estimates:\n")
-      if (is.logical(symbolic.cor) && symbolic.cor) {
-        print(symnum(correl, abbr.colnames = NULL))
-      }
-      else {
-        correl <- format(round(correl, 2), nsmall = 2L, 
-                         digits = digits)
-        correl[!lower.tri(correl)] <- ""
-        print(correl[-1, -p, drop = FALSE], quote = FALSE)
-      }
+  if (!is.null(correl) && (p <- NCOL(correl)) > 1) {
+    cat("\nCorrelation of Parameter Estimates:\n")
+    if (is.logical(symbolic.cor) && symbolic.cor) print(symnum(correl, abbr.colnames = NULL))
+    else {
+      correl <- format(round(correl, 2), nsmall = 2L, digits = digits)
+      correl[!lower.tri(correl)] <- ""
+      print(correl[-1, -p, drop = FALSE], quote = FALSE)
     }
   }
   convInfo(x, digits = digits)
@@ -274,17 +226,18 @@ plot.onls <- function(x, panel = NULL, fitted.nls = TRUE, fitted.onls = TRUE, as
                       segments = TRUE, npoints = 200, nmesh = 25, ...)
 {
   object  <- x
-  xnms    <- object$pred_names
-  pnms    <- object$param_names
-  theta_o <- object$parONLS
+  xnms    <- .xnames(object)
+  pnms    <- .pnames(object)
+  theta_o <- object$coefficients
   theta_n <- object$parNLS
   FORMULA <- object$formula[[3L]]
-  nameY   <- attr(object$resp, "name")
+  env_f   <- environment(object$formula); if (is.null(env_f)) env_f <- globalenv()
+  nameY   <- .yname(object)
   
-  X  <- object$pred  
-  Y  <- object$resp
-  X0 <- object$x0
-  Y0 <- object$y0
+  X  <- if (ncol(object$X_obs) == 1L) object$X_obs[, 1L] else object$X_obs
+  Y  <- object$y_obs
+  X0 <- if (ncol(object$xi) == 1L) object$xi[, 1L] else object$xi
+  Y0 <- object$yi
   
   dots  <- list(...)
   xlim0 <- dots$xlim; ylim0 <- dots$ylim
@@ -308,7 +261,7 @@ plot.onls <- function(x, panel = NULL, fitted.nls = TRUE, fitted.onls = TRUE, as
     grid  <- expand.grid(x1seq, x2seq)
     names(grid) <- c(x1nm, x2nm)
     for (nm in pnms) grid[[nm]] <- coefs[[nm]]
-    zvals <- eval(FORMULA, envir = grid)
+    zvals <- eval(FORMULA, envir = grid, enclos = env_f)
     zmat  <- matrix(zvals, nrow = nmesh, ncol = nmesh)
     
     rgl::open3d()
@@ -432,14 +385,14 @@ plot.onls <- function(x, panel = NULL, fitted.nls = TRUE, fitted.onls = TRUE, as
       env <- as.list(other_fixed)
       env[[xname]] <- sweepX
       for (nm in pnms) env[[nm]] <- theta_o[[nm]]
-      onlsY <- eval(FORMULA, envir = as.data.frame(env))
+      onlsY <- eval(FORMULA, envir = as.data.frame(env), enclos = env_f)
     }
     nlsY <- NULL
     if (fitted.nls) {
       env <- as.list(other_fixed)
       env[[xname]] <- sweepX
       for (nm in pnms) env[[nm]] <- theta_n[[nm]]
-      nlsY <- eval(FORMULA, envir = as.data.frame(env))
+      nlsY <- eval(FORMULA, envir = as.data.frame(env), enclos = env_f)
     }
     
     do.call(plot, plot_args)
@@ -459,144 +412,83 @@ plot.onls <- function(x, panel = NULL, fitted.nls = TRUE, fitted.onls = TRUE, as
   invisible(NULL)
 }
 
-profile.onls <- function(fitted, which = 1L:npar, maxpts = 100,
-                         alphamax = 0.01, delta.t = cutoff/5, ...)
-{
-  f.summary <- summary(fitted)
-  std.err <- f.summary$coefficients[, "Std. Error"]
-  nobs <- length(resid(fitted))
-  origPars <- unlist(fitted$parONLS)
-  npar <- length(origPars)
-  
-  orig_fixed <- if (!is.null(fitted$fixed)) as.logical(fitted$fixed) else rep(FALSE, npar)
-  
-  lower <- fitted$lower
-  lower <- rep_len(if (!is.null(lower)) as.double(lower) else -Inf, npar)
-  upper <- fitted$upper
-  upper <- rep_len(if (!is.null(upper)) as.double(upper) else Inf, npar)
-  
-  if (is.character(which))  which <- match(which, names(origPars), 0)
-  which <- which[which >= 1 & which <= npar]
-  which <- which[!orig_fixed[which]]   
-  cutoff <- sqrt(qf(1 - alphamax, 1L, fitted$df_resid))
-  out <- vector("list", npar)
-  S.hat <- deviance_o(fitted)
-  s2.hat <- deviance_o(fitted) / fitted$df_resid
-  
-  for (par in which) {
-    pars <- origPars
-    sgn <- -1
-    count <- 1
-    varying <- rep.int(TRUE, npar)
-    varying[par] <- FALSE
-    FIXED <- (!varying) | orig_fixed
-    tau <- double(2 * maxpts)
-    par.vals <- array(0, c(2L * maxpts, npar), list(NULL, names(pars)))
-    tau[1L] <- 0
-    par.vals[1, ] <- pars
-    base <- pars[par]
-    profile.par.inc <- delta.t * std.err[par]
-    pars[par] <- base - profile.par.inc
-    pars[par] <- pmin(upper[par], pmax(lower[par], pars[par]))
-    
-    while (count <= maxpts) {
-      if (is.na(pars[par]) || isTRUE(all.equal(pars, par.vals[1, ]))
-          || pars[par] < lower[par] || pars[par] > upper[par]
-          || abs(pars[par] - base)/std.err[par] > 10 * cutoff) break
-      
-      FIT1 <- update(fitted, start = pars, fixed = FIXED, trace = FALSE)
-      dev1 <- deviance_o(FIT1)
-      fstat <- (dev1 - S.hat)/s2.hat
-      
-      if (is.na(fstat) || fstat < 0) break
-      newtau <- sgn * sqrt(fstat)
-      
-      if (abs(newtau - tau[count]) < 0.1) break
-      count <- count + 1
-      tau[count] <- newtau
-      par.vals[count, ] <- pars <- coef(FIT1)[1L:npar]
-      
-      if (abs(tau[count]) > cutoff) break
-      pars <- pars + ((pars - par.vals[count - 1, ]) * delta.t)/abs(tau[count] - tau[count - 1])
-      pars[-par] <- pmin(upper[-par], pmax(lower[-par], pars[-par]))
-    }
-    
-    ind <- seq_len(count)
-    tau[ind] <- tau[rev(ind)]
-    par.vals[ind, ] <- par.vals[rev(ind), ]
-    sgn <- 1
-    newmax <- count + maxpts
-    pars <- par.vals[count, ]
-    pars[par] <- base + profile.par.inc
-    pars[par] <- pmin(upper[par], pmax(lower[par], pars[par]))
-    
-    while (count <= newmax) {
-      if (is.na(pars[par]) || isTRUE(all.equal(pars, par.vals[1, ]))
-          || pars[par] < lower[par] || pars[par] >
-          upper[par] || abs(pars[par] - base)/std.err[par] >
-          10 * cutoff) break
-      
-      FIT2 <- update(fitted, start = pars, fixed = FIXED, trace = FALSE)
-      dev2 <- deviance_o(FIT2)
-      fstat2 <- (dev2 - S.hat)/s2.hat
-      
-      if (is.na(fstat2) || fstat2 < 0) break
-      newtau <- sgn * sqrt(fstat2)
-      if (abs(newtau - tau[count]) < 0.1) break
-      count <- count + 1
-      tau[count] <- newtau
-      par.vals[count, ] <- pars <- coef(FIT2)[1L:npar]
-      if (abs(tau[count]) > cutoff) break
-      pars <- pars + ((pars - par.vals[count - 1, ]) * delta.t)/abs(tau[count] - tau[count - 1])
-      pars[-par] <- pmin(upper[-par], pmax(lower[-par], pars[-par]))
-    }
-    
-    ind <- seq_len(count)
-    out[[par]] <- structure(list(tau = tau[ind], par.vals = par.vals[ind, , drop = FALSE]),
-                            class = "data.frame", row.names = as.character(ind),
-                            parameters = list(par = par, std.err = std.err[par]))
-    
-  }
-  
-  names(out)[which] <- names(coef(fitted))[which]
-  out <- out[which]
-  attr(out, "original.fit") <- fitted
-  attr(out, "summary") <- f.summary
-  class(out) <- c("profile.onls", "profile")
-  out
-}
+## Analysis of variance for nested onls models on the orthogonal objective S
+## (the criterion the models minimize), not on the vertical residual sum of
+## squares that anova.nls() would use through deviance().
+##
+## Estimated variances (known_sigma = FALSE): extra-sum-of-squares F test,
+##   F = ((S_a - S_b) / (df_a - df_b)) / (S_b / df_b),  b = the larger model of a pair.
+## Known variances (known_sigma = TRUE): S is -2 log-likelihood up to a constant,
+##   so S_a - S_b is a likelihood-ratio statistic, chi-square with df_a - df_b.
 
-confint.onls <- function(object, parm = "all", level = 0.95, k = 200, ...) 
+anova.onls <- function(object, ...)
 {
-  if (parm != "all") stop("Only 'all' is allowed for 'parm'.")
-  n_success <- 0L
-  alpha <- 1 - level
-    
-  DAT0 <- eval(object$data)
-  xnms <- object$pred_names
-  boot_coefs <- matrix(NA_real_, nrow = k, ncol = length(coef(object)))
-  coef0 <- coef(object)
-  se0 <- object$std_errors
-    
-  while (n_success < k) {
-    idx   <- sample(1:nrow(DAT0), replace = TRUE)
-    BOOT <- tryCatch(update(object, data = DAT0[idx, ], start = object$start, trace = FALSE, ...), error = function(e) NULL)
-      
-    if (any(abs(coef(BOOT) - coef0) > 20 * se0, na.rm = TRUE)) next # safeguard with 20x SE on any coefficient
-      
-    if (!is.null(BOOT) && BOOT$convergence == 0 && all(BOOT$ortho)) {
-        n_success <- n_success + 1L
-        boot_coefs[n_success, ] <- coef(BOOT)
-        if (n_success %% 10 == 0) cat(n_success) else cat(".")
-        if (n_success %% 50 == 0) cat("\n")
-        flush.console()
-      } else next
+  models <- c(list(object), list(...))
+  if (length(models) < 2L)
+    stop("anova() for 'onls' needs at least two nested models fitted to the same data.")
+  if (!all(vapply(models, inherits, logical(1L), what = "onls")))
+    stop("All models must be fits of class 'onls'.")
+
+  ## ---- comparability: same observations, same precisions, same variance assumption
+  ref <- models[[1L]]
+  for (m in models[-1L]) {
+    if (m$n != ref$n || !isTRUE(all.equal(unname(m$y_obs), unname(ref$y_obs))))
+      stop("The models were not fitted to the same observations (response or number of observations differ).")
+    if (!isTRUE(all.equal(unname(m$Q_yy), unname(ref$Q_yy))))
+      stop("The models differ in `weights` or `sigma_y`: their orthogonal objectives are not comparable.")
+    common <- intersect(colnames(m$X_obs), colnames(ref$X_obs))
+    if (!isTRUE(all.equal(unname(m$X_obs[, common, drop = FALSE]), unname(ref$X_obs[, common, drop = FALSE]))))
+      stop("The models were not fitted to the same predictor values.")
+    same_x <- setequal(colnames(m$X_obs), colnames(ref$X_obs))
+    if (same_x) {
+      ok <- isTRUE(all.equal(unname(m$Lx[, common, common, drop = FALSE]), unname(ref$Lx[, common, common, drop = FALSE])))
+    } else {
+      ## different predictor sets: only uncorrelated predictor errors can be compared
+      offd <- function(L) { p <- dim(L)[2L]; p > 1L && any(vapply(seq_len(p), function(a) any(abs(L[, a, -a]) > 0), logical(1L))) }
+      if (offd(m$Lx) || offd(ref$Lx))
+        stop("Models with different predictors and correlated predictor errors (p x p `sigma_x`) cannot be compared.")
+      dg <- function(L, k) L[, k, k]
+      ok <- all(vapply(common, function(k) isTRUE(all.equal(dg(m$Lx, k), dg(ref$Lx, k))), logical(1L)))
+    }
+    if (!ok) stop("The models differ in `sigma_x`: their orthogonal objectives are not comparable.")
+    if (!identical(isTRUE(m$known_sigma), isTRUE(ref$known_sigma)))
+      stop("The models differ in `known_sigma`: compare models fitted with the same variance assumption.")
   }
-  cat("\n")
-    
-  OUT <- apply(boot_coefs, 2, quantile, probs = c(alpha / 2, 1 - alpha / 2), na.rm = TRUE)
-  OUT <- t(OUT)
-  colnames(OUT) <- c(paste0(100 * alpha / 2, "%"), paste0(100 * (1 - alpha / 2), "%"))
-  rownames(OUT) <- names(coef0)  
-  return(OUT)
+  if (any(vapply(models, function(m) m$convergence != 0L, logical(1L))))
+    warning("Not all models converged: the comparison may be misleading.")
+
+  known <- isTRUE(ref$known_sigma)
+  S  <- vapply(models, function(m) m$objective, numeric(1L))
+  df <- vapply(models, function(m) as.numeric(m$df_resid), numeric(1L))
+  k  <- length(models)
+
+  ## ---- consecutive comparisons, as anova.nls(): model i against model i - 1
+  dDf <- c(NA, -diff(df))
+  dS  <- c(NA, -diff(S))
+  stat <- pval <- rep(NA_real_, k)
+  for (i in seq_len(k)[-1L]) {
+    if (dDf[i] == 0) next
+    big <- if (df[i] < df[i - 1L]) i else i - 1L             # the model with more parameters
+    num <- (S[i - 1L] - S[i]) / (df[i - 1L] - df[i])          # change per degree of freedom (sign-free)
+    if (known) {
+      stat[i] <- num * abs(dDf[i])
+      pval[i] <- stats::pchisq(stat[i], abs(dDf[i]), lower.tail = FALSE)
+    } else {
+      stat[i] <- num / (S[big] / df[big])
+      pval[i] <- stats::pf(stat[i], abs(dDf[i]), df[big], lower.tail = FALSE)
+    }
+  }
+  if (any(stat < 0, na.rm = TRUE))
+    warning("A model with more parameters has a larger objective: the models are not nested, ",
+            "or a fit did not reach its minimum.")
+
+  TAB <- data.frame(df, S, dDf, dS, stat, pval)
+  names(TAB) <- c("Res.Df", "Res.Obj", "Df", "Obj", if (known) "Chisq" else "F value",
+                  if (known) "Pr(>Chi)" else "Pr(>F)")
+  rownames(TAB) <- as.character(seq_len(k))
+  forms <- vapply(models, function(m) paste(deparse(formula(m), width.cutoff = 500L), collapse = " "), character(1L))
+  head <- c(paste0("Analysis of the orthogonal objective (", if (known) "known variances: likelihood-ratio chi-square test"
+                   else "estimated variances: F test", ")\n"),
+            paste0("Model ", format(seq_len(k)), ": ", forms, collapse = "\n"))
+  structure(TAB, heading = head, class = c("anova", "data.frame"))
 }

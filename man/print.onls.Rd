@@ -17,7 +17,7 @@ Provides a printed summary of the converged fit obtained from \code{\link{onls}}
 }
 
 \value{
-A printed summary containing the formula, data name, converged parameters, vertical residual sum-of-squares \deqn{\sum_{i=1}^{n} w_i (y_i - \hat{y_i})^2} (prefixed \dQuote{weighted} when \code{weights} are non-constant), orthogonal residual sum-of-squares \deqn{\sum_{i=1}^{n} \hat d_i^2} (see \code{\link{onls}} for the general, precision-weighted definition of \eqn{\hat d_i}; plain Euclidean distance is a special case), a \dQuote{PASSED}/\dQuote{FAILED} message reporting how many fitted points are orthogonal as obtained from \code{\link{check_o}}, and the number of iterations to convergence. 
+A printed summary containing the formula, data name, converged parameters, vertical residual sum-of-squares \deqn{\sum_{i=1}^{n} w_i (y_i - \hat{y_i})^2} (prefixed \dQuote{weighted} when \code{weights} are non-constant), orthogonal residual sum-of-squares \deqn{\sum_{i=1}^{n} \hat d_i^2} (see \code{\link{onls}} for the general, precision-weighted definition of \eqn{\hat d_i}; plain Euclidean distance is a special case), a \dQuote{PASSED}/\dQuote{FAILED} message reporting how many fitted points are orthogonal as obtained from \code{\link{check_o}}, (or a note that it could not be checked), the number of iterations to convergence and the convergence tolerance \code{ftol} that was used. 
 }
      
 \author{

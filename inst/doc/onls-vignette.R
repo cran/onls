@@ -29,7 +29,7 @@ plot(mod_uni)
 check_o(mod_uni, plot = FALSE)
 
 ## ----foot-points--------------------------------------------------------------
-FP <- data.frame(x = mod_uni$pred, x0 = x0(mod_uni), y = mod_uni$resp, y0 = y0(mod_uni))
+FP <- data.frame(x = DNase1$conc, x0 = x0(mod_uni), y = DNase1$density, y0 = y0(mod_uni))
 FP$dist <- sqrt((FP$x - FP$x0)^2 + (FP$y - FP$y0)^2)
 head(FP)
 
@@ -38,7 +38,7 @@ all.equal(sum(FP$dist^2), deviance_o(mod_uni))
 
 ## ----orthogonal-residuals-----------------------------------------------------
 d_o <- residuals_o(mod_uni)
-all.equal(sort(d_o), sort(FP$dist), check.attributes = FALSE)
+all.equal(d_o, FP$dist, check.attributes = FALSE)
 all.equal(sum(d_o^2), deviance_o(mod_uni))
 
 ## side by side with the vertical residuals of the same fit
@@ -149,7 +149,7 @@ summary(mod_hyp)   # expect a, b, c close to 3, 2, 4
 check_o(mod_hyp, plot = FALSE)
 
 ## ----bivariate-plot, eval = FALSE---------------------------------------------
-# plot(mod_hyp)
+#  plot(mod_hyp)
 
 ## ----half-dome----------------------------------------------------------------
 set.seed(123)
@@ -173,14 +173,14 @@ summary(mod_dome)   # r close to 6
 check_o(mod_dome, plot = FALSE)   # all orthogonal to the dome surface
 
 ## ----half-dome-plot, eval = FALSE---------------------------------------------
-# plot(mod_dome)   # renders as a visibly round dome
+#  plot(mod_dome)   # renders as a visibly round dome
 
 ## ----classical-lm-style, eval = FALSE-----------------------------------------
-# ## This is NOT valid onls() syntax -- shown only for comparison.
-# lm(z ~ x1 + I(x2^2) + sqrt(x3) + log(x4 + 1))
+#  ## This is NOT valid onls() syntax -- shown only for comparison.
+#  lm(z ~ x1 + I(x2^2) + sqrt(x3) + log(x4 + 1))
 
 ## ----classical-onls-style, eval = FALSE---------------------------------------
-# z ~ b0 + b1 * x1 + b2 * x2^2 + b3 * sqrt(x3) + b4 * log(x4 + 1)
+#  z ~ b0 + b1 * x1 + b2 * x2^2 + b3 * sqrt(x3) + b4 * log(x4 + 1)
 
 ## ----multivariate-fit---------------------------------------------------------
 set.seed(99)
@@ -330,13 +330,35 @@ summary(mod_gomp)
 check_o(mod_gomp, plot = FALSE)
 
 ## ----loglik-compare-----------------------------------------------------------
-mod_uni_w <- onls(density ~ Asym / (1 + exp((xmid - log(conc)) / scal)),
-                  data = DNase1, start = list(Asym = 3, xmid = 0, scal = 1),
-                  sigma_x = 0.05, sigma_y = 0.1)
-AIC(logLik_o(mod_uni))
-AIC(logLik_o(mod_uni_w))
+mod_3 <- onls(density ~ Asym / (1 + exp((xmid - log(conc)) / scal)),
+              data = DNase1, start = list(Asym = 3, xmid = 0, scal = 1),
+              sigma_x = 0.05, sigma_y = 0.1)
+mod_4 <- onls(density ~ y0 + (Asym - y0) / (1 + exp((xmid - log(conc)) / scal)),
+              data = DNase1, start = list(y0 = 0, Asym = 3, xmid = 0, scal = 1),
+              sigma_x = 0.05, sigma_y = 0.1)
+c(AIC(logLik_o(mod_3)), AIC(logLik_o(mod_4)))
 
 ## ----confint------------------------------------------------------------------
+confint(mod_uni)                     # profile
+confint(mod_uni, method = "wald")
 set.seed(123)
-confint(mod_uni, k = 100)
+confint(mod_uni, method = "boot", k = 200)
+
+## ----predict------------------------------------------------------------------
+nd <- data.frame(conc = c(0.1, 1, 10))
+predict(mod_3, nd, interval = "confidence")
+predict(mod_3, nd, interval = "prediction")
+predict(mod_3, nd, interval = "prediction", sigma_x = 0)
+
+## ----algorithms---------------------------------------------------------------
+set.seed(1)
+n <- 400
+xt <- seq(0, 10, length.out = n)
+DAT_big <- data.frame(x = xt + rnorm(n, 0, 0.2), y = 5 / (1 + exp(-(xt - 5))) + rnorm(n, 0, 0.2))
+t_s <- system.time(m_s <- onls(y ~ b1 / (1 + exp(-(x - b2) / b3)), data = DAT_big,
+                               start = list(b1 = 4, b2 = 4, b3 = 1.5)))[["elapsed"]]
+t_d <- system.time(m_d <- onls(y ~ b1 / (1 + exp(-(x - b2) / b3)), data = DAT_big,
+                               start = list(b1 = 4, b2 = 4, b3 = 1.5), algorithm = "dense"))[["elapsed"]]
+data.frame(algorithm = c("structured", "dense"), seconds = c(t_s, t_d),
+           rbind(coef(m_s), coef(m_d)))
 

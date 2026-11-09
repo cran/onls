@@ -1,17 +1,18 @@
 Package: onls
 Type: Package
-LazyLoad: no
 Title: Orthogonal Nonlinear Least-Squares Regression
-Version: 0.2
+Version: 0.3
+Date: 2026-11-09
 Authors@R: c(person("Andrej-Nikolai Spiess", role = c("aut", "cre"), email = "draspiess@gmail.com"))
 Maintainer: Andrej-Nikolai Spiess <draspiess@gmail.com>
-Description: Fits n-dimensional data by means of orthogonal nonlinear least-squares using Levenberg-Marquardt minimization and provides functionality for fit diagnostics and plotting. Delivers the same results as the 'ODRPACK' Fortran implementation described in Boggs et al. (1989) <doi:10.1145/76909.76913>, but is implemented in pure R.
+Description: Fits n-dimensional data by means of orthogonal nonlinear least-squares using Levenberg-Marquardt minimization, with a solver that exploits the block structure of the problem as 'ODRPACK' does, so that its cost grows linearly with the number of observations, and provides functionality for fit diagnostics and plotting. Delivers the same results as the 'ODRPACK' Fortran implementation described in Boggs et al. (1989) <doi:10.1145/76909.76913>, but is implemented in pure R.
 License: GPL (>= 2)
-Depends: R (>= 2.13.0), minpack.lm, rgl
-Suggests: knitr, rmarkdown
+Depends: R (>= 3.5.0)
+Imports: minpack.lm
+Suggests: rgl, knitr, rmarkdown
 VignetteBuilder: knitr
 NeedsCompilation: no
-Packaged: 2026-09-21 04:58:34 UTC; User
+Packaged: 2026-11-09 15:38:02 UTC; User
 Author: Andrej-Nikolai Spiess [aut, cre]
 Repository: CRAN
-Date/Publication: 2026-09-21 05:10:02 UTC
+Date/Publication: 2026-11-09 17:00:11 UTC

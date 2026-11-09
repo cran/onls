@@ -7,18 +7,17 @@ deviance_o,
 residuals_o,
 logLik_o,
 check_o,
-NIST
+doGauge
 )
 
 importFrom("minpack.lm", "nlsLM", "nls.lm", "nls.lm.control")
-importFrom("graphics", "lines", "par", "plot", "points", "legend", "matplot")
+importFrom("graphics", "abline", "lines", "par", "plot", "points", "legend", "segments")
+importFrom("grDevices", "extendrange", "n2mfrow")
 importFrom("stats", ".checkMFClasses", "approx", "as.formula", "coef",
-             "confint", "deviance", "fitted", "formula", "getInitial",
-             "model.weights", "napredict", "naprint", "numericDeriv",
-             "optimize", "printCoefmat", "profile", "pt", "qf", "qt",
-             "resid", "residuals", "spline", "symnum", "update", "deriv",
-             "nls", "nls.control", "optim", "setNames", "quantile")
-importFrom("rgl", "open3d", "surface3d", "points3d", "segments3d", "aspect3d", "title3d")
+             "confint", "deviance", "fitted", "formula", "napredict", "naprint",
+             "printCoefmat", "profile", "pnorm", "pt", "qchisq", "qf", "qnorm", "qt",
+             "quantile", "resid", "splinefun", "residuals", "symnum", "deriv", "setNames",
+             "vcov", "df.residual", "weights", "logLik", "predict")
 importFrom("utils", "flush.console")
 
 ## S3 methods
@@ -37,5 +36,9 @@ S3method(coef, onls)
 S3method(formula, onls)
 S3method(vcov, onls)
 S3method(df.residual, onls)
+S3method(weights, onls)
 S3method(confint, onls)
-
+S3method(profile, onls)
+S3method(anova, onls)
+S3method(confint, profile.onls)
+S3method(plot, profile.onls)
